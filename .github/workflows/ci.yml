@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  typescript:
+    name: Worker, fonctions et app web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Typage du worker (partagé avec les Edge Functions)
+        run: npx tsc -p services/worker --noEmit
+      - name: Tests (parseur iCal, Web Push RFC 8291, notifications)
+        run: npm test -w @jarvis/worker
+      - name: Build de l'app web
+        run: npm run build:web
+
+  desktop:
+    name: App de bureau (Tauri)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build:web
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+      - name: Compilation
+        run: cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
