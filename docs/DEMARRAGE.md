@@ -21,7 +21,7 @@ clé `GEMINI_API_KEY` dans `.env`), avec repli automatique sur Flash-Lite en cas
 Après toute modification de `.env` :
 
 ```bash
-cd C:UsersGBDesktopProjet_persojarvisservicesworker && npx tsx --env-file=../../.env scripts/deploy-functions.ts assistant
+cd C:\Users\GB\Desktop\Projet_perso\jarvis\services\worker && npx tsx --env-file=../../.env scripts/deploy-functions.ts assistant
 ```
 
 Pour passer un jour à Claude (payant) : `ANTHROPIC_API_KEY=…` et `LLM_PROVIDER=claude` dans `.env`.
