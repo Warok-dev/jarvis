@@ -4,3 +4,5 @@ dist/
 .env.*
 !.env.example
 *.log
+supabase/.local/
+supabase/.temp/

@@ -1,7 +1,7 @@
 // Une synchronisation complète : flux Brightspace → table assignments, puis affiche les derniers événements.
-import { adminClient, requireEnv } from "../src/db.js";
-import { fetchFeed, parseFeed } from "../src/brightspace/ical.js";
-import { syncBrightspace } from "../src/brightspace/sync.js";
+import { adminClient, requireEnv } from "./env.ts";
+import { fetchFeed, parseFeed } from "../src/brightspace/ical.ts";
+import { syncBrightspace } from "../src/brightspace/sync.ts";
 
 const db = adminClient();
 const userId = requireEnv("SUPABASE_USER_ID");

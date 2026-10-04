@@ -1,6 +1,6 @@
 // Lit le flux iCal Brightspace depuis .env et affiche un résumé analysé.
 // L'URL du flux n'est jamais affichée.
-import { fetchFeed, parseFeed } from "../src/brightspace/ical.js";
+import { fetchFeed, parseFeed } from "../src/brightspace/ical.ts";
 
 const TZ = "America/Toronto";
 const fmt = new Intl.DateTimeFormat("fr-CA", {

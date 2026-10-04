@@ -1,5 +1,3 @@
-import ical from "node-ical";
-
 export type BrightspaceEventKind = "due" | "start" | "end" | "other";
 export type BrightspaceItemType = "quiz" | "checklist" | "item";
 
@@ -48,19 +46,19 @@ export async function fetchFeed(url: string): Promise<string> {
 }
 
 export function parseFeed(icsText: string): BrightspaceEvent[] {
-  const data = ical.sync.parseICS(icsText);
   const events: BrightspaceEvent[] = [];
 
-  for (const item of Object.values(data)) {
-    if (!item || item.type !== "VEVENT") continue;
-    const rawTitle = text(item.summary) ?? "(sans titre)";
+  for (const item of readVEvents(icsText)) {
+    const uid = item.get("UID")?.value;
+    if (!uid) continue;
+    const rawTitle = text(item.get("SUMMARY")) ?? "(sans titre)";
     const { kind, itemType, title } = classify(rawTitle);
-    const start = item.start ? new Date(item.start) : null;
-    const end = item.end ? new Date(item.end) : null;
-    const course = text(item.location) ?? null;
+    const start = icsDate(item.get("DTSTART"));
+    const end = icsDate(item.get("DTEND"));
+    const course = text(item.get("LOCATION")) ?? null;
 
     events.push({
-      externalId: item.uid,
+      externalId: uid,
       kind,
       itemType,
       title,
@@ -70,12 +68,81 @@ export function parseFeed(icsText: string): BrightspaceEvent[] {
       term: course ? parseTerm(course) : null,
       dueAt: end ?? start,
       startAt: start,
-      description: text(item.description) ?? null,
-      url: text((item as { url?: unknown }).url) ?? null,
+      description: text(item.get("DESCRIPTION")) ?? null,
+      url: item.get("URL")?.value ?? null,
     });
   }
 
   return events.sort((a, b) => (a.dueAt?.getTime() ?? 0) - (b.dueAt?.getTime() ?? 0));
+}
+
+// --- Lecture iCal minimale (RFC 5545), sans dépendance : tourne sous Node et Deno. ---
+// Les RRULE sont ignorées : seule la première occurrence compte pour une échéance.
+
+interface Prop { value: string; params: Record<string, string> }
+
+function* readVEvents(ics: string): Generator<Map<string, Prop>> {
+  const lines = ics.replace(/\r?\n[ \t]/g, "").split(/\r?\n/); // dépliage des lignes longues
+  let current: Map<string, Prop> | null = null;
+  for (const line of lines) {
+    if (line === "BEGIN:VEVENT") current = new Map();
+    else if (line === "END:VEVENT") { if (current) yield current; current = null; }
+    else if (current) {
+      const p = parseLine(line);
+      if (p && !current.has(p.name)) current.set(p.name, p.prop);
+    }
+  }
+}
+
+function parseLine(line: string): { name: string; prop: Prop } | null {
+  // Le premier « : » hors guillemets sépare nom;paramètres et valeur.
+  let quoted = false, i = 0;
+  for (; i < line.length; i++) {
+    if (line[i] === '"') quoted = !quoted;
+    else if (line[i] === ":" && !quoted) break;
+  }
+  if (i >= line.length) return null;
+  const [name, ...rawParams] = line.slice(0, i).split(";");
+  const params: Record<string, string> = {};
+  for (const rp of rawParams) {
+    const eq = rp.indexOf("=");
+    if (eq > 0) params[rp.slice(0, eq).toUpperCase()] = rp.slice(eq + 1).replace(/^"|"$/g, "");
+  }
+  return { name: name.toUpperCase(), prop: { value: line.slice(i + 1), params } };
+}
+
+const DEFAULT_TZ = "America/Toronto";
+
+function icsDate(p: Prop | undefined): Date | null {
+  const m = p?.value.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/);
+  if (!m) return null;
+  const [, y, mo, d, h = "0", mi = "0", s = "0", z] = m;
+  const parts = [+y, +mo - 1, +d, +h, +mi, +s] as const;
+  if (z) return new Date(Date.UTC(...parts));
+  // Heure locale (TZID) ou journée entière : interprétée dans le fuseau indiqué, sinon Toronto.
+  return zonedToUtc(parts, p!.params.TZID ?? DEFAULT_TZ);
+}
+
+function zonedToUtc(parts: readonly [number, number, number, number, number, number], tz: string): Date {
+  const asUtc = Date.UTC(...parts);
+  let ts = asUtc - tzOffset(asUtc, tz);
+  ts = asUtc - tzOffset(ts, tz); // seconde passe pour les changements d'heure
+  return new Date(ts);
+}
+
+function tzOffset(ts: number, tz: string): number {
+  const f = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const v = Object.fromEntries(f.formatToParts(new Date(ts)).map((x) => [x.type, x.value]));
+  return Date.UTC(+v.year, +v.month - 1, +v.day, +v.hour, +v.minute, +v.second) - Math.floor(ts / 1000) * 1000;
+}
+
+function text(p: Prop | undefined): string | undefined {
+  if (!p) return undefined;
+  const v = p.value.replace(/\\([nN,;\\])/g, (_, c: string) => (c === "n" || c === "N" ? "\n" : c)).trim();
+  return v || undefined;
 }
 
 function classify(rawTitle: string): { kind: BrightspaceEventKind; itemType: BrightspaceItemType; title: string } {
@@ -107,12 +174,4 @@ export function parseTerm(course: string): string | null {
   const word = course.toLowerCase().match(/(hiver|janvier|printemps|été|mai|automne|septembre)\s+(20\d{2})/);
   if (word) return `${word[2]}-${TERM_BY_WORD[word[1]]}`;
   return null;
-}
-
-// node-ical renvoie parfois { val, params } au lieu d'une chaîne.
-function text(v: unknown): string | undefined {
-  if (v == null) return undefined;
-  if (typeof v === "string") return v.trim() || undefined;
-  if (typeof v === "object" && "val" in v) return text((v as { val: unknown }).val);
-  return String(v);
 }

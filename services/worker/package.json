@@ -8,8 +8,7 @@
     "sync-once": "tsx --env-file-if-exists=../../.env scripts/sync-once.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.117.2",
-    "node-ical": "^0.27.3"
+    "@supabase/supabase-js": "^2.117.2"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

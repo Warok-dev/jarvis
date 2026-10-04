@@ -1,5 +1,5 @@
-import type { AdminClient } from "../db.js";
-import type { BrightspaceEvent } from "./ical.js";
+import type { AdminClient } from "../db.ts";
+import type { BrightspaceEvent } from "./ical.ts";
 
 const SOURCE = "brightspace_ical";
 // Les échéances passées depuis plus longtemps que ça sont ignorées (anciennes sessions).
