@@ -44,6 +44,11 @@ la connexion dans la fenêtre. Ensuite :
   taper du texte (seulement après avoir ouvert une app), Entrée/Tab/Échap, attendre ;
 - journal : `%APPDATA%\dev.warok.jarvis\jarvis.log`.
 
+Mot d'activation (menu « Écoute « Hey Jarvis » », désactivé par défaut) : détection 100 % locale
+(modèles openWakeWord, `resources/wakeword`), environ 3 % d'un cœur quand il y a du son et quasiment
+rien en silence. Au réveil : la fenêtre s'ouvre sur la conversation et la dictée Windows (Win+H)
+démarre dans le champ. Réglages dans `settings.json` : `wake_threshold` (0,3), `wake_dictation` (true).
+
 ## Configuration
 
 Copier `.env.example` en `.env` et remplir. Secrets : jamais dans Git (vérifié avant chaque commit).
@@ -71,7 +76,7 @@ cd apps/desktop && npx tauri build         # installateur Windows (NSIS)
 - [x] App de bureau : barre des tâches, démarrage auto
 - [x] PC relié au cloud : présence, notifications Windows natives, commandes signées
 - [x] Contrôle du PC, niveau 1 : actions en liste blanche via l'assistant (« ouvre VS Code »)
-- [ ] Mot d'activation « Jarvis » sur PC (Porcupine/openWakeWord)
+- [x] Mot d'activation « Hey Jarvis » sur PC : openWakeWord local (tract), porte d'énergie, désactivé par défaut
 - [ ] Mail uOttawa (Microsoft Graph)
 - [x] Planning de révision : durées estimées, disponibilités, EDF, alerte « temps manquant », récap du matin
 - [ ] Horaire de cours uOttawa (prêt : renseigner `TIMETABLE_ICAL_URL`)

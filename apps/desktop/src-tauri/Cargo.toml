@@ -30,6 +30,10 @@ uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 keyring = { version = "3", features = ["windows-native"] }
 enigo = "0.2"
+# Mot d'activation (openWakeWord) : inférence ONNX locale.
+tract-onnx = "0.23"
+# Capture du micro pour le mot d'activation.
+cpal = "0.15"
 
 [profile.release]
 # Binaire léger : Jarvis tourne en permanence.

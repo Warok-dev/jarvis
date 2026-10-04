@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
 import { currentDevice } from "../lib/device";
 import { canListen, listen, speak, stopSpeaking, unlockSpeech, type ListenHandle } from "../lib/voice";
+import { onDesktopWake } from "../lib/desktop";
 
 type Turn = { role: "user" | "assistant"; content: string };
 type Phase = "idle" | "listening" | "thinking" | "speaking";
@@ -26,6 +27,24 @@ export function Assistant() {
   const [error, setError] = useState<string | null>(null);
   const listening = useRef<ListenHandle | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  // Réveillé par « Hey Jarvis » sur PC : la prochaine réponse est lue à voix haute.
+  const wokeByVoice = useRef(false);
+
+  useEffect(() => {
+    const wake = () => {
+      wokeByVoice.current = true;
+      setOpen(true);
+      // Le champ prend le focus : la dictée Windows (Win+H, lancée par l'app) y écrit.
+      setTimeout(() => input.current?.focus(), 50);
+    };
+    const w = window as { __JARVIS_WAKE__?: boolean };
+    if (w.__JARVIS_WAKE__) {
+      w.__JARVIS_WAKE__ = false;
+      wake();
+    }
+    return onDesktopWake(wake);
+  }, []);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -72,7 +91,9 @@ export function Assistant() {
     if (!text || phase === "thinking") return;
     setDraft("");
     unlockSpeech();
-    void send(text, false);
+    const spoken = wokeByVoice.current;
+    wokeByVoice.current = false;
+    void send(text, spoken);
   }
 
   const micLabel = { idle: "Parler à Jarvis", listening: "Arrêter l'écoute", thinking: "Jarvis réfléchit", speaking: "Couper la voix" }[phase];
@@ -104,6 +125,7 @@ export function Assistant() {
           </div>
           <form className="assistant-input" onSubmit={onSubmit}>
             <input
+              ref={input}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               placeholder={canListen ? "Écrire à Jarvis…" : "Écrire à Jarvis (dictée : touche micro du clavier)"}

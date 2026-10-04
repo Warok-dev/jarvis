@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import { currentDevice } from "./device";
@@ -36,4 +37,16 @@ export async function fetchPcState(): Promise<PcState | null> {
   const d = data[0];
   const online = Boolean(d.last_seen_at && Date.now() - Date.parse(d.last_seen_at) < 3 * 60_000);
   return { label: d.label, online, remoteEnabled: d.remote_enabled };
+}
+
+// « Hey Jarvis » détecté par l'app de bureau alors que la fenêtre était déjà ouverte.
+export function onDesktopWake(handler: () => void): () => void {
+  if (currentDevice() !== "desktop") return () => {};
+  let unlisten: (() => void) | null = null;
+  let cancelled = false;
+  listen("jarvis-wake", handler).then((u) => (cancelled ? u() : (unlisten = u)));
+  return () => {
+    cancelled = true;
+    unlisten?.();
+  };
 }
