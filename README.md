@@ -2,6 +2,8 @@
 
 Assistant personnel pour la vie étudiante : suit les devoirs Brightspace, envoie des notifications, répond à la voix, et (bientôt) agit sur le PC.
 
+Pour démarrer : **[docs/DEMARRAGE.md](docs/DEMARRAGE.md)** (iPhone, clé de l’assistant, app de bureau).
+
 ## Architecture
 
 ```
