@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "check-feed": "npm run check-feed -w @jarvis/worker",
-    "sync-once": "npm run sync-once -w @jarvis/worker"
+    "sync-once": "npm run sync-once -w @jarvis/worker",
+    "build:web": "npm run build -w @jarvis/web"
   }
 }
