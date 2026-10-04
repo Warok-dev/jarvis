@@ -11,6 +11,34 @@ export interface PlanSummary {
   unscheduled: number;
 }
 
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const clamp = (v: unknown, lo: number, hi: number, d: number) =>
+  typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : d;
+const validWindow = (w: unknown): w is { weekday: number; start: string; end: string; label?: unknown } => {
+  const x = w as { weekday?: unknown; start?: unknown; end?: unknown };
+  return Number.isInteger(x?.weekday) && (x.weekday as number) >= 0 && (x.weekday as number) <= 6 &&
+    typeof x.start === "string" && typeof x.end === "string" && HHMM.test(x.start) && HHMM.test(x.end) && x.start < x.end;
+};
+
+// Préférences venant de l'utilisateur : bornées pour qu'aucune valeur ne bloque le calcul.
+export function sanitizePreferences(raw: unknown): Preferences {
+  const p = (raw && typeof raw === "object" ? raw : {}) as Partial<Preferences>;
+  const d = DEFAULT_PREFERENCES;
+  const windows = Array.isArray(p.windows) ? p.windows.filter(validWindow).slice(0, 50) : d.windows;
+  const busyWeekly = Array.isArray(p.busyWeekly)
+    ? p.busyWeekly.filter(validWindow).slice(0, 100).map((b) => ({ ...b, label: typeof b.label === "string" ? b.label.slice(0, 40) : undefined }))
+    : [];
+  return {
+    windows,
+    busyWeekly,
+    maxBlockMinutes: clamp(p.maxBlockMinutes, 15, 240, d.maxBlockMinutes),
+    minBlockMinutes: clamp(p.minBlockMinutes, 15, 120, d.minBlockMinutes),
+    breakMinutes: clamp(p.breakMinutes, 0, 60, d.breakMinutes),
+    dailyCapMinutes: clamp(p.dailyCapMinutes, 15, 960, d.dailyCapMinutes),
+    bufferBeforeDueMinutes: clamp(p.bufferBeforeDueMinutes, 0, 2880, d.bufferBeforeDueMinutes),
+  };
+}
+
 // Recalcule le planning des 14 prochains jours et remplace les blocs futurs.
 export async function runPlan(db: AdminClient, userId: string, now = new Date()): Promise<PlanSummary> {
   const horizon = new Date(now.getTime() + HORIZON_DAYS * DAY);
@@ -25,7 +53,7 @@ export async function runPlan(db: AdminClient, userId: string, now = new Date())
   ]);
   for (const r of [assignmentsRes, busyRes, prefsRes]) if (r.error) throw new Error(r.error.message);
 
-  const prefs: Preferences = { ...DEFAULT_PREFERENCES, ...(prefsRes.data?.prefs ?? {}) };
+  const prefs = sanitizePreferences(prefsRes.data?.prefs);
   const tasks = assignmentsRes.data!.map((a) => ({
     id: a.id,
     dueAt: new Date(a.due_at),

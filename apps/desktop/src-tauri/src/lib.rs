@@ -6,7 +6,7 @@ mod log;
 mod realtime;
 mod wakeword;
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -36,7 +36,10 @@ struct Link {
     registered: Notify,
     /// Commandes à distance autorisées (désactivé par défaut, réglage persistant).
     remote_enabled: AtomicBool,
-    executed: Mutex<HashSet<String>>,
+    /// Commandes déjà vues (id → expiration), purgées après expiration.
+    executed: Mutex<HashMap<String, chrono::DateTime<chrono::Utc>>>,
+    /// Une seule commande exécutée à la fois (sans bloquer la boucle principale).
+    running: Mutex<()>,
 }
 
 // ---------- Fenêtre ----------
@@ -62,6 +65,9 @@ fn show_main(app: &AppHandle, wake: bool) {
         .inner_size(440.0, 780.0)
         .min_inner_size(360.0, 520.0)
         .focused(true)
+        .on_navigation(|url| {
+            matches!(url.host_str(), Some("tauri.localhost") | Some("localhost")) || url.scheme() == "tauri"
+        })
         .build();
 }
 
@@ -84,7 +90,7 @@ fn start_dictation() {
 
 fn set_wake(app: &AppHandle, enabled: bool) -> Result<(), String> {
     let state = app.state::<Wake>();
-    let mut slot = state.listener.lock().unwrap();
+    let mut slot = state.listener.lock().unwrap_or_else(|e| e.into_inner());
     if !enabled {
         *slot = None; // l'arrêt du thread libère le micro
         log!("écoute du mot d'activation désactivée");
@@ -107,9 +113,15 @@ fn set_wake(app: &AppHandle, enabled: bool) -> Result<(), String> {
         let _ = handle.run_on_main_thread(move || show_main(&h, true));
         if dictation {
             // Laisse la fenêtre prendre le focus, puis démarre la dictée Windows dans le champ.
-            std::thread::spawn(|| {
+            let h = handle.clone();
+            std::thread::spawn(move || {
                 std::thread::sleep(Duration::from_millis(900));
-                start_dictation();
+                let focused = h.get_webview_window(MAIN).and_then(|w| w.is_focused().ok()).unwrap_or(false);
+                if focused {
+                    start_dictation();
+                } else {
+                    log!("dictée non lancée : la fenêtre de Jarvis n'a pas le focus");
+                }
             });
         }
     })?;
@@ -143,7 +155,10 @@ fn write_setting(app: &AppHandle, key: &str, value: serde_json::Value) {
         let mut settings = read_settings(app);
         settings[key] = value;
         let _ = std::fs::create_dir_all(path.parent().unwrap());
-        let _ = std::fs::write(path, serde_json::to_string_pretty(&settings).unwrap_or_default());
+        let tmp = path.with_extension("json.tmp");
+        if std::fs::write(&tmp, serde_json::to_string_pretty(&settings).unwrap_or_default()).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
     }
 }
 
@@ -188,20 +203,30 @@ async fn register_device(app: AppHandle, access_token: String) -> Result<String,
     Ok(label)
 }
 
-/// Exécute (ou refuse) une commande signée reçue du serveur.
-async fn handle_command(app: &AppHandle, link: &Link, signed: SignedCommand) {
+/// Exécute (ou refuse) une commande signée reçue du serveur. Tourne dans sa propre tâche.
+async fn handle_command(app: AppHandle, link: Arc<Link>, signed: SignedCommand) {
     let identity = link.identity.lock().await.clone();
-    let command = match executor::authenticate(&identity, &signed, chrono::Utc::now()) {
+    let now = chrono::Utc::now();
+    let command = match executor::authenticate(&identity, &signed, now) {
         Ok(c) => c,
         Err(e) => return log!("commande ignorée : {e}"),
     };
     // La même commande peut arriver par le canal temps réel et par le battement de cœur.
-    if !link.executed.lock().await.insert(command.id.clone()) {
-        return;
+    {
+        let mut seen = link.executed.lock().await;
+        seen.retain(|_, until| *until > now);
+        if seen.contains_key(&command.id) {
+            return;
+        }
+        let until = chrono::DateTime::parse_from_rfc3339(&command.expires_at)
+            .map(|d| d.with_timezone(&chrono::Utc))
+            .unwrap_or(now);
+        seen.insert(command.id.clone(), until);
     }
     let report = |status: &'static str, result: String| {
         let identity = identity.clone();
         let id = command.id.clone();
+        let link = link.clone();
         async move {
             if let Err(e) = link.api.report(&identity, &id, status, &result).await {
                 log!("rapport impossible : {e}");
@@ -209,7 +234,7 @@ async fn handle_command(app: &AppHandle, link: &Link, signed: SignedCommand) {
         }
     };
     if !link.remote_enabled.load(Ordering::Relaxed) {
-        toast(app, "Jarvis", &format!("Commande refusée : « {} ». Active les commandes à distance dans le menu de Jarvis.", command.summary));
+        toast(&app, "Jarvis", &format!("Commande refusée : « {} ». Active les commandes à distance dans le menu de Jarvis.", command.summary));
         return report("rejected", "Commandes à distance désactivées sur le PC".into()).await;
     }
     let apps = executor::load_apps(&app.path().app_data_dir().unwrap_or_default());
@@ -217,13 +242,42 @@ async fn handle_command(app: &AppHandle, link: &Link, signed: SignedCommand) {
         Ok(s) => s,
         Err(e) => return report("rejected", e).await,
     };
-    toast(app, "Jarvis agit sur ton PC", &command.summary);
-    report("running", String::new()).await;
-    let notifier = |text: &str| toast(app, "Jarvis", text);
+    // Réservation atomique côté serveur (horloge du serveur) : une commande rejouée,
+    // déjà traitée ou expirée n'est jamais exécutée, même après un redémarrage du PC.
+    match link.api.claim(&identity, &command.id).await {
+        Ok(true) => {}
+        Ok(false) => return log!("commande déjà traitée ou expirée"),
+        Err(e) => return log!("réservation impossible : {e}"),
+    }
+    let _turn = link.running.lock().await;
+    toast(&app, "Jarvis agit sur ton PC", &command.summary);
+    let notifier = |text: &str| toast(&app, "Jarvis", text);
     match executor::execute(steps, notifier).await {
         Ok(()) => report("done", "OK".into()).await,
         Err(e) => report("failed", e).await,
     }
+}
+
+/// Notification diffusée par le serveur : affichée seulement si elle est signée et récente.
+async fn handle_notification(app: &AppHandle, link: &Link, payload: serde_json::Value) {
+    let Ok(signed) = serde_json::from_value::<SignedCommand>(payload) else {
+        return log!("notification non signée ignorée");
+    };
+    let identity = link.identity.lock().await.clone();
+    if !identity.verify(&format!("notif:{}", signed.body), &signed.sig) {
+        return log!("notification à signature invalide ignorée");
+    }
+    let n: serde_json::Value = serde_json::from_str(&signed.body).unwrap_or_default();
+    let now = chrono::Utc::now();
+    let fresh = n["expires_at"]
+        .as_str()
+        .and_then(|d| chrono::DateTime::parse_from_rfc3339(d).ok())
+        .map(|d| d > now && d < now + chrono::Duration::minutes(15))
+        .unwrap_or(false);
+    if !fresh {
+        return log!("notification expirée ignorée");
+    }
+    toast(app, n["title"].as_str().unwrap_or("Jarvis"), n["body"].as_str().unwrap_or(""));
 }
 
 async fn heartbeat_once(app: &AppHandle, link: &Arc<Link>) {
@@ -239,7 +293,7 @@ async fn heartbeat_once(app: &AppHandle, link: &Arc<Link>) {
                 log!("battement : {} commande(s) en attente", commands.len());
             }
             for c in commands {
-                handle_command(app, link, c).await;
+                tauri::async_runtime::spawn(handle_command(app.clone(), link.clone(), c));
             }
         }
         Err(e) => log!("battement : {e}"),
@@ -262,14 +316,10 @@ async fn background(app: AppHandle, link: Arc<Link>) {
             Some(b) = rx.recv() => {
                 log!("reçu : {}", b.event);
                 match b.event.as_str() {
-                "notification" => toast(
-                    &app,
-                    b.payload["title"].as_str().unwrap_or("Jarvis"),
-                    b.payload["body"].as_str().unwrap_or(""),
-                ),
+                "notification" => handle_notification(&app, &link, b.payload).await,
                 "command" => {
                     if let Ok(signed) = serde_json::from_value::<SignedCommand>(b.payload) {
-                        handle_command(&app, &link, signed).await;
+                        tauri::async_runtime::spawn(handle_command(app.clone(), link.clone(), signed));
                     }
                 }
                 _ => {}
@@ -302,7 +352,8 @@ pub fn run() {
                 api: Api::new(),
                 registered: Notify::new(),
                 remote_enabled: AtomicBool::new(remote),
-                executed: Mutex::new(HashSet::new()),
+                executed: Mutex::new(HashMap::new()),
+                running: Mutex::new(()),
             });
             app.manage(link.clone());
             tauri::async_runtime::spawn(background(app.handle().clone(), link.clone()));

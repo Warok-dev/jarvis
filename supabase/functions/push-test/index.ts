@@ -1,6 +1,7 @@
 // Bouton « Tester » de l'app : envoie une notification aux appareils de l'utilisateur connecté.
 import { createAdminClient } from "../../../services/worker/src/db.ts";
 import { sendPush } from "../../../services/worker/src/push/webpush.ts";
+import { isOwner } from "../../../services/worker/src/security.ts";
 
 // tauri.localhost : app de bureau Windows.
 const ALLOWED_ORIGINS = ["https://jarvis-4s2.pages.dev", "http://tauri.localhost", "http://localhost:5180"];
@@ -27,6 +28,7 @@ Deno.serve(async (req) => {
     const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
     const { data: { user } } = await db.auth.getUser(token);
     if (!user) return json({ message: "Non connecté" }, 401);
+    if (!isOwner(user.id, env("JARVIS_USER_ID"))) return json({ message: "Accès refusé" }, 403);
 
     const { data: subs, error } = await db.from("push_subscriptions").select("id, endpoint, p256dh, auth").eq("user_id", user.id);
     if (error) throw error;
@@ -35,7 +37,12 @@ Deno.serve(async (req) => {
     const vapid = { publicKey: env("VAPID_PUBLIC_KEY"), privateKey: env("VAPID_PRIVATE_KEY"), subject: env("VAPID_SUBJECT") };
     let ok = 0;
     for (const s of subs) {
-      const r = await sendPush(s, { title: "Jarvis", body: "Les notifications fonctionnent.", url: "/", tag: "test" }, vapid, { ttlSeconds: 300, urgency: "high" });
+      let r;
+      try {
+        r = await sendPush(s, { title: "Jarvis", body: "Les notifications fonctionnent.", url: "/", tag: "test" }, vapid, { ttlSeconds: 300, urgency: "high" });
+      } catch {
+        r = { ok: false, status: 0, gone: true }; // abonnement inutilisable
+      }
       if (r.ok) ok++;
       else if (r.gone) await db.from("push_subscriptions").delete().eq("id", s.id);
       else console.error("push-test refusé", r.status, r.body);

@@ -73,12 +73,12 @@ async fn session(channel: &str, tx: &mpsc::Sender<Broadcast>) -> Result<(), Stri
             msg = read.next() => match msg {
                 Some(Ok(Message::Text(text))) => {
                     if text.contains("\"phx_reply\"") && text.contains("\"ref\":\"1\"") {
-                        crate::log!("realtime : canal rejoint ({})", if text.contains("\"ok\"") { "ok" } else { &text });
+                        crate::log!("realtime : canal rejoint ({})", if text.contains("\"ok\"") { "ok" } else { "refusé" });
                     }
                     if let Some(b) = parse_broadcast(&text, channel) {
                         let _ = tx.send(b).await;
                     } else if text.contains("\"phx_error\"") || text.contains("\"phx_close\"") {
-                        return Err(format!("canal fermé : {text}"));
+                        return Err("canal fermé par le serveur".into());
                     }
                 }
                 Some(Ok(Message::Ping(p))) => { let _ = write.send(Message::Pong(p)).await; }

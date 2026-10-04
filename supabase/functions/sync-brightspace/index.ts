@@ -3,6 +3,7 @@
 import { createAdminClient } from "../../../services/worker/src/db.ts";
 import { fetchFeed, parseFeed } from "../../../services/worker/src/brightspace/ical.ts";
 import { syncBrightspace } from "../../../services/worker/src/brightspace/sync.ts";
+import { safeEqual } from "../../../services/worker/src/security.ts";
 
 function env(name: string): string {
   const v = Deno.env.get(name);
@@ -12,7 +13,7 @@ function env(name: string): string {
 
 Deno.serve(async (req) => {
   // Déployée sans vérification JWT : seul pg_cron connaît ce secret.
-  if (req.headers.get("x-cron-secret") !== env("CRON_SECRET")) {
+  if (!(await safeEqual(req.headers.get("x-cron-secret") ?? "", env("CRON_SECRET")))) {
     return new Response("Non autorisé", { status: 401 });
   }
   try {

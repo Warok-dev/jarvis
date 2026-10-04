@@ -129,6 +129,9 @@ fn open_stream(tx: mpsc::SyncSender<Vec<i16>>) -> Result<cpal::Stream, String> {
     let device = cpal::default_host().default_input_device().ok_or("aucun micro trouvé")?;
     let config = device.default_input_config().map_err(|e| e.to_string())?;
     let channels = config.channels() as usize;
+    if channels == 0 {
+        return Err("le micro n'annonce aucun canal audio".into());
+    }
     let mut resampler = Resampler::new(config.sample_rate().0);
     crate::log!(
         "micro : {} ({} Hz, {} canal/canaux, {:?})",

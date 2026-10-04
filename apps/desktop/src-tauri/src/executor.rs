@@ -19,6 +19,14 @@ use crate::device::Identity;
 const MAX_TEXT: usize = 4000;
 const MAX_WAIT_MS: u64 = 10_000;
 const MAX_STEPS: usize = 12;
+const MAX_TOTAL_WAIT_MS: u64 = 15_000;
+/// Une commande ne peut pas annoncer une expiration lointaine (le serveur donne 2 min).
+const MAX_EXPIRY_AHEAD_MIN: i64 = 5;
+/// Fenêtres dans lesquelles Jarvis ne tape jamais : un texte suivi d'Entrée y exécuterait du code.
+const FORBIDDEN_FOREGROUND: [&str; 14] = [
+    "cmd.exe", "powershell.exe", "pwsh.exe", "windowsterminal.exe", "wt.exe", "conhost.exe", "openconsole.exe",
+    "bash.exe", "wsl.exe", "mintty.exe", "regedit.exe", "mmc.exe", "taskmgr.exe", "jarvis-desktop.exe",
+];
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
 pub struct AppEntry {
@@ -49,8 +57,12 @@ pub fn default_apps() -> AppList {
 pub fn load_apps(dir: &Path) -> AppList {
     let file = dir.join("apps.json");
     if let Ok(text) = std::fs::read_to_string(&file) {
-        if let Ok(apps) = serde_json::from_str(&text) {
-            return apps;
+        if let Ok(apps) = serde_json::from_str::<AppList>(&text) {
+            // Les cibles passent par cmd /C start : on écarte celles qui contiennent ses métacaractères.
+            return apps
+                .into_iter()
+                .filter(|(_, a)| !a.target.chars().any(|c| matches!(c, '&' | '|' | '<' | '>' | '^' | '%' | '"')))
+                .collect();
         }
     }
     let apps = default_apps();
@@ -88,6 +100,9 @@ pub fn authenticate(identity: &Identity, signed: &SignedCommand, now: chrono::Da
     if expires < now {
         return Err("commande expirée".into());
     }
+    if expires > now + chrono::Duration::minutes(MAX_EXPIRY_AHEAD_MIN) {
+        return Err("expiration anormalement lointaine".into());
+    }
     Ok(command)
 }
 
@@ -98,6 +113,7 @@ pub fn validate(steps: &[Value], apps: &AppList) -> Result<Vec<Step>, String> {
     }
     let mut out = Vec::new();
     let mut opened_something = false;
+    let mut waited = 0u64;
     for step in steps {
         let action = step["action"].as_str().unwrap_or_default();
         let parsed = match action {
@@ -108,15 +124,9 @@ pub fn validate(steps: &[Value], apps: &AppList) -> Result<Vec<Step>, String> {
                 Step::OpenApp(entry.clone())
             }
             "open_url" => {
-                let url = step["url"].as_str().unwrap_or_default();
-                let ok = url.starts_with("https://")
-                    && url.len() <= 2000
-                    && !url.chars().any(|c| c.is_whitespace() || c == '"' || c.is_control());
-                if !ok {
-                    return Err("URL refusée (https uniquement)".into());
-                }
+                let url = checked_url(step["url"].as_str().unwrap_or_default())?;
                 opened_something = true;
-                Step::OpenUrl(url.to_string())
+                Step::OpenUrl(url)
             }
             "type_text" => {
                 if !opened_something {
@@ -134,13 +144,81 @@ pub fn validate(steps: &[Value], apps: &AppList) -> Result<Vec<Step>, String> {
                 "escape" => Step::PressKey("escape"),
                 other => return Err(format!("touche « {other} » non autorisée")),
             },
-            "wait" => Step::Wait(step["ms"].as_u64().unwrap_or(500).min(MAX_WAIT_MS)),
+            "wait" => {
+                let ms = step["ms"].as_u64().unwrap_or(500).min(MAX_WAIT_MS);
+                waited += ms;
+                if waited > MAX_TOTAL_WAIT_MS {
+                    return Err("attente totale trop longue".into());
+                }
+                Step::Wait(ms)
+            }
             "notify" => Step::Notify(step["text"].as_str().unwrap_or_default().chars().take(300).collect()),
             other => return Err(format!("action « {other} » non autorisée")),
         };
         out.push(parsed);
     }
     Ok(out)
+}
+
+/// URL https simple uniquement, normalisée. Les virgules et antislashs sont refusés
+/// (certains programmes Windows les interprètent comme des chemins).
+pub fn checked_url(raw: &str) -> Result<String, String> {
+    if raw.len() > 2000 || raw.chars().any(|c| c.is_whitespace() || c.is_control() || matches!(c, '"' | ',' | '\\' | '<' | '>' | '|' | '^')) {
+        return Err("URL refusée".into());
+    }
+    let u = url::Url::parse(raw).map_err(|_| "URL invalide".to_string())?;
+    if u.scheme() != "https" || u.host_str().is_none() || !u.username().is_empty() || u.password().is_some() {
+        return Err("URL refusée (https simple uniquement)".into());
+    }
+    Ok(u.into())
+}
+
+/// Ouvre l'URL dans le navigateur par défaut, sans passer par un shell ni explorer.exe.
+fn open_url(url: &str) -> Result<(), String> {
+    use windows_sys::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+    let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
+    let (verb, target) = (wide("open"), wide(url));
+    let r = unsafe { ShellExecuteW(std::ptr::null_mut(), verb.as_ptr(), target.as_ptr(), std::ptr::null(), std::ptr::null(), SW_SHOWNORMAL) };
+    if r as isize > 32 { Ok(()) } else { Err("ouverture de l'URL impossible".into()) }
+}
+
+/// Nom de l'exécutable de la fenêtre au premier plan (en minuscules).
+fn foreground_process() -> Option<String> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.is_null() {
+            return None;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, &mut pid);
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+        if handle.is_null() {
+            return None;
+        }
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let ok = QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &mut len);
+        CloseHandle(handle);
+        if ok == 0 {
+            return None;
+        }
+        let path = String::from_utf16_lossy(&buf[..len as usize]);
+        path.rsplit('\\').next().map(|n| n.to_lowercase())
+    }
+}
+
+/// Refuse de taper si la fenêtre active est un terminal ou un outil système.
+fn ensure_safe_foreground() -> Result<(), String> {
+    match foreground_process() {
+        None => Err("saisie refusée : fenêtre active inconnue".into()),
+        Some(name) if FORBIDDEN_FOREGROUND.contains(&name.as_str()) => {
+            Err(format!("saisie refusée : « {name} » est au premier plan"))
+        }
+        Some(_) => Ok(()),
+    }
 }
 
 fn spawn(program: &str, args: &[&str]) -> Result<(), String> {
@@ -160,15 +238,16 @@ pub async fn execute(steps: Vec<Step>, notify: impl Fn(&str)) -> Result<(), Stri
         match step {
             // La cible vient de apps.json (local) : « start » résout les alias comme « code » ou « chrome ».
             Step::OpenApp(app) => spawn("cmd", &["/C", "start", "", &app.target])?,
-            // Pas de shell : explorer.exe reçoit l'URL telle quelle et ouvre le navigateur par défaut.
-            Step::OpenUrl(url) => spawn("explorer.exe", &[&url])?,
+            Step::OpenUrl(url) => open_url(&url)?,
             Step::TypeText(text) => keyboard(move |k| {
+                ensure_safe_foreground()?;
                 use enigo::Keyboard;
                 k.text(&text).map_err(|e| e.to_string())
             })
             .await?,
             Step::PressKey(name) => keyboard(move |k| {
                 use enigo::{Direction, Key, Keyboard};
+                ensure_safe_foreground()?;
                 let key = match name {
                     "enter" => Key::Return,
                     "tab" => Key::Tab,
@@ -209,6 +288,23 @@ mod tests {
         let parsed = validate(&steps, &default_apps()).unwrap();
         assert_eq!(parsed[1], Step::Wait(MAX_WAIT_MS));
         assert_eq!(parsed[3], Step::PressKey("enter"));
+    }
+
+    #[test]
+    fn urls_verifiees() {
+        assert_eq!(checked_url("https://exemple.com/a?b=1").unwrap(), "https://exemple.com/a?b=1");
+        for bad in [
+            "http://exemple.com",
+            "https://a.com,C:/Windows/System32/calc.exe",
+            "https://a.com\\partage",
+            "https://user:pass@a.com/",
+            "file:///C:/Windows",
+            "javascript:alert(1)",
+            "https://a.com/\"&calc",
+            "ms-settings:privacy",
+        ] {
+            assert!(checked_url(bad).is_err(), "devrait être refusée : {bad}");
+        }
     }
 
     #[test]

@@ -74,3 +74,23 @@ assert.deepEqual(libres.map((i) => `${show(i.start)}→${show(i.end)}`), [
 ]);
 
 console.log("planner : tous les tests passent");
+
+// Préférences hostiles bornées (aucune ne doit bloquer le calcul).
+import { sanitizePreferences } from "../src/planner/run.ts";
+const hostile = sanitizePreferences({
+  maxBlockMinutes: 1e-9, minBlockMinutes: 0, breakMinutes: -5, dailyCapMinutes: 1e12, bufferBeforeDueMinutes: "x",
+  windows: [{ weekday: 9, start: "18:00", end: "22:00" }, { weekday: 1, start: "25:00", end: "26:00" }, { weekday: 2, start: "18:00", end: "20:00" }],
+  busyWeekly: Array.from({ length: 500 }, () => ({ weekday: 1, start: "08:00", end: "09:00", label: "x".repeat(100) })),
+});
+assert.equal(hostile.maxBlockMinutes, 15);
+assert.equal(hostile.minBlockMinutes, 15);
+assert.equal(hostile.breakMinutes, 0);
+assert.equal(hostile.dailyCapMinutes, 960);
+assert.equal(hostile.bufferBeforeDueMinutes, 120);
+assert.deepEqual(hostile.windows, [{ weekday: 2, start: "18:00", end: "20:00" }]);
+assert.equal(hostile.busyWeekly!.length, 100);
+assert.equal(hostile.busyWeekly![0].label!.length, 40);
+const t0 = Date.now();
+plan([{ id: "x", dueAt: torontoTime(2026, 10, 20, 12, 0), minutes: 3000 }], [], hostile, now);
+assert.ok(Date.now() - t0 < 1000, "calcul trop long avec des préférences bornées");
+console.log("préférences bornées : OK");

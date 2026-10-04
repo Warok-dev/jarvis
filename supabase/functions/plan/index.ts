@@ -3,6 +3,7 @@
 import { createAdminClient } from "../../../services/worker/src/db.ts";
 import { fetchFeed } from "../../../services/worker/src/brightspace/ical.ts";
 import { runPlan, syncTimetable } from "../../../services/worker/src/planner/run.ts";
+import { isOwner, safeEqual } from "../../../services/worker/src/security.ts";
 
 const ALLOWED_ORIGINS = ["https://jarvis-4s2.pages.dev", "http://tauri.localhost", "http://localhost:5180"];
 
@@ -27,7 +28,7 @@ Deno.serve(async (req) => {
     const db = createAdminClient(env("SUPABASE_URL"), env("JARVIS_SECRET_KEY"));
     let userId: string;
     let timetable = 0;
-    if (req.headers.get("x-cron-secret") === env("CRON_SECRET")) {
+    if (await safeEqual(req.headers.get("x-cron-secret") ?? "", env("CRON_SECRET"))) {
       userId = env("JARVIS_USER_ID");
       const url = Deno.env.get("TIMETABLE_ICAL_URL");
       if (url) timetable = await syncTimetable(db, userId, await fetchFeed(url));
@@ -35,6 +36,10 @@ Deno.serve(async (req) => {
       const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
       const { data: { user } } = await db.auth.getUser(token);
       if (!user) return json({ error: "Non connecté" }, 401);
+      if (!isOwner(user.id, env("JARVIS_USER_ID"))) return json({ error: "Accès refusé" }, 403);
+      // Recalcul à la demande limité à une fois toutes les 20 s.
+      const { data: last } = await db.from("study_plan_runs").select("computed_at").eq("user_id", user.id).maybeSingle();
+      if (last && Date.now() - Date.parse(last.computed_at) < 20_000) return json({ error: "Patiente quelques secondes" }, 429);
       userId = user.id;
     }
     const summary = await runPlan(db, userId);

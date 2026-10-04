@@ -59,12 +59,16 @@ impl Api {
     async fn signed(&self, identity: &Identity, route: &str, mut body: Value) -> Result<Value, String> {
         body["device_id"] = json!(identity.id);
         body["ts"] = json!(chrono::Utc::now().timestamp());
+        // Nonce à usage unique : le serveur refuse toute requête rejouée.
+        body["nonce"] = json!(crate::device::random_token(18));
         let raw = body.to_string();
+        // La signature couvre la route : une requête ne peut pas être rejouée sur une autre.
+        let signature = identity.sign(&format!("{route}\n{raw}"));
         let res = self
             .http
             .post(endpoint(route))
             .header("apikey", PUBLISHABLE_KEY)
-            .header("x-jarvis-signature", identity.sign(&raw))
+            .header("x-jarvis-signature", signature)
             .header("content-type", "application/json")
             .body(raw)
             .send()
@@ -85,6 +89,12 @@ impl Api {
         let value = self.signed(identity, "heartbeat", extra).await?;
         let parsed: HeartbeatResponse = serde_json::from_value(value).map_err(|e| e.to_string())?;
         Ok(parsed.commands)
+    }
+
+    /// Réserve une commande côté serveur (atomique) : faux si déjà traitée, expirée ou inconnue.
+    pub async fn claim(&self, identity: &Identity, command_id: &str) -> Result<bool, String> {
+        let v = self.signed(identity, "claim", json!({ "command_id": command_id })).await?;
+        Ok(v["claimed"].as_bool() == Some(true))
     }
 
     pub async fn report(&self, identity: &Identity, command_id: &str, status: &str, result: &str) -> Result<(), String> {

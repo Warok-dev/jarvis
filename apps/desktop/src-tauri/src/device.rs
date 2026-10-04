@@ -72,6 +72,13 @@ impl Identity {
 
 type HmacSha256 = Hmac<Sha256>;
 
+/// Jeton aléatoire base64url (nonce des requêtes signées).
+pub fn random_token(bytes: usize) -> String {
+    let mut buf = vec![0u8; bytes];
+    rand::thread_rng().fill_bytes(&mut buf);
+    URL_SAFE_NO_PAD.encode(buf)
+}
+
 fn mac(secret: &str) -> HmacSha256 {
     let key = URL_SAFE_NO_PAD.decode(secret).unwrap_or_default();
     HmacSha256::new_from_slice(&key).expect("HMAC accepte toute taille de clé")

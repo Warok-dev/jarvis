@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { pcTools, runPcTool, type PcAccess } from "./pc-tools.ts";
+import { isUuid } from "../security.ts";
 import { runPlan } from "../planner/run.ts";
 import { DEFAULT_PREFERENCES, type Preferences, type WeeklyBusy } from "../planner/planner.ts";
 
@@ -140,6 +141,7 @@ const fmt = new Intl.DateTimeFormat("fr-CA", {
 });
 
 export async function runTool(db: SupabaseClient, name: string, input: Record<string, unknown>, device: string, pc?: PcAccess): Promise<string> {
+  if ("assignment_id" in input && !isUuid(input.assignment_id)) return "Identifiant de devoir invalide : utilise un id renvoyé par list_assignments.";
   if (name === "get_assignment_details") {
     const { data, error } = await db.from("assignments")
       .select("course_code, course_name, title, description, url, due_at, status, estimated_minutes")

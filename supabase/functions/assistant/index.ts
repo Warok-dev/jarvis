@@ -5,6 +5,7 @@ import type { ChatTurn } from "../../../services/worker/src/assistant/assistant.
 import { respond, type Providers } from "../../../services/worker/src/assistant/brain.ts";
 import { GeminiError } from "../../../services/worker/src/assistant/gemini.ts";
 import { createAdminClient } from "../../../services/worker/src/db.ts";
+import { isOwner } from "../../../services/worker/src/security.ts";
 
 // tauri.localhost : app de bureau Windows.
 const ALLOWED_ORIGINS = ["https://jarvis-4s2.pages.dev", "http://tauri.localhost", "http://localhost:5180"];
@@ -39,6 +40,7 @@ Deno.serve(async (req) => {
   });
   const { data: { user } } = await db.auth.getUser(authorization.replace(/^Bearer\s+/i, ""));
   if (!user) return json({ reply: "Session expirée, reconnecte-toi." }, 401);
+  if (!isOwner(user.id, Deno.env.get("JARVIS_USER_ID") ?? "")) return json({ reply: "Accès refusé." }, 403);
 
   let body: { messages?: ChatTurn[]; device?: string };
   try {
@@ -46,8 +48,9 @@ Deno.serve(async (req) => {
   } catch {
     return json({ reply: "Requête invalide." }, 400);
   }
-  const history = (body.messages ?? [])
-    .filter((m) => (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+  if (!Array.isArray(body?.messages)) return json({ reply: "Requête invalide." }, 400);
+  const history = body.messages
+    .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
     .slice(-MAX_TURNS)
     .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_CHARS) }));
   while (history.length && history[0].role !== "user") history.shift();

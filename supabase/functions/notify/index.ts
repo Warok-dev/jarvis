@@ -1,6 +1,7 @@
 // Appelée toutes les 5 min par pg_cron : nouveaux devoirs, échéances modifiées, rappels J-1 et H-3.
 import { createAdminClient } from "../../../services/worker/src/db.ts";
 import { runNotify } from "../../../services/worker/src/notify/notify.ts";
+import { safeEqual } from "../../../services/worker/src/security.ts";
 
 function env(name: string): string {
   const v = Deno.env.get(name);
@@ -9,7 +10,7 @@ function env(name: string): string {
 }
 
 Deno.serve(async (req) => {
-  if (req.headers.get("x-cron-secret") !== env("CRON_SECRET")) {
+  if (!(await safeEqual(req.headers.get("x-cron-secret") ?? "", env("CRON_SECRET")))) {
     return new Response("Non autorisé", { status: 401 });
   }
   try {

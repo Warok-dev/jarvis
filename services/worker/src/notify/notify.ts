@@ -1,6 +1,6 @@
 import type { AdminClient } from "../db.ts";
 import { sendPush, type VapidKeys } from "../push/webpush.ts";
-import { broadcast, topicFor } from "../devices/device-auth.ts";
+import { broadcast, signNotification, topicFor } from "../devices/device-auth.ts";
 
 // Décide quoi notifier et l'envoie. Appelé toutes les 5 min par pg_cron (fonction notify).
 // Chaque notification a une dedup_key unique : relancer n'envoie jamais deux fois la même chose.
@@ -242,8 +242,8 @@ export async function runNotify(
   if (subsRes.error) throw new Error(`Lecture des abonnements : ${subsRes.error.message}`);
   if (desktopsRes.error) throw new Error(`Lecture des appareils : ${desktopsRes.error.message}`);
   const subs = subsRes.data;
-  const desktopTopics = await Promise.all(desktopsRes.data.map((d) => topicFor(d.secret)));
-  if (!subs.length && !desktopTopics.length) return { ...result, noSubscription: true };
+  const desktops = await Promise.all(desktopsRes.data.map(async (d) => ({ secret: d.secret, topic: await topicFor(d.secret) })));
+  if (!subs.length && !desktops.length) return { ...result, noSubscription: true };
 
   const cols = "id, title, course_code, due_at, status, removed_at";
   const [eventsRes, upcomingRes] = await Promise.all([
@@ -309,7 +309,13 @@ export async function runNotify(
     result.pushes++;
     let delivered = false;
     for (const s of subs) {
-      const r = await sendPush(s, message, vapid, { urgency: "high", topic: message.tag.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32) });
+      let r: Awaited<ReturnType<typeof sendPush>>;
+      try {
+        r = await sendPush(s, message, vapid, { urgency: "high", topic: message.tag.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 32) });
+      } catch (e) {
+        console.error("push impossible", (e as Error).message);
+        r = { ok: false, status: 0, gone: true }; // abonnement inutilisable : supprimé
+      }
       if (r.ok) {
         delivered = true;
         await db.from("push_subscriptions").update({ last_success_at: new Date().toISOString(), failure_count: 0 }).eq("id", s.id);
@@ -322,8 +328,9 @@ export async function runNotify(
       }
     }
     // PC allumé : notification Windows native via son canal temps réel.
-    for (const topic of desktopTopics) {
-      if (await broadcast(realtime.supabaseUrl, realtime.secretKey, topic, "notification", { ...message })) delivered = true;
+    for (const d of desktops) {
+      const signed = await signNotification(d.secret, message);
+      if (await broadcast(realtime.supabaseUrl, realtime.secretKey, d.topic, "notification", { ...signed })) delivered = true;
     }
     if (delivered) {
       result.delivered++;

@@ -66,6 +66,16 @@ export async function signCommand(
   return { body, sig: await sign(secret, `cmd:${body}`) };
 }
 
+// Notification pour le PC : signée elle aussi (sinon quiconque connaîtrait le canal pourrait
+// afficher de fausses notifications Windows), avec une expiration courte.
+export async function signNotification(
+  secret: string,
+  message: { title: string; body: string; url?: string; tag?: string },
+): Promise<{ body: string; sig: string }> {
+  const body = JSON.stringify({ ...message, expires_at: new Date(Date.now() + 10 * 60_000).toISOString() });
+  return { body, sig: await sign(secret, `notif:${body}`) };
+}
+
 // Diffusion vers le canal du PC via l'API REST de Realtime (clé secrète du serveur).
 export async function broadcast(
   supabaseUrl: string,

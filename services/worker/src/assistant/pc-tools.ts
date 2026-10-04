@@ -74,15 +74,50 @@ export async function onlineDesktop(pc: PcAccess) {
   return data[0] ?? null;
 }
 
-// Ne garde que les champs utiles de chaque étape (le PC ignore le reste de toute façon).
-function cleanSteps(raw: unknown): PcStep[] {
+const MAX_TOTAL_WAIT_MS = 15_000;
+
+// Validation stricte avant signature : le modèle peut être trompé par un contenu piégé,
+// le serveur ne signe que des étapes sûres (le PC revérifie tout de son côté).
+export function cleanSteps(raw: unknown, apps: Array<{ id: string }>): PcStep[] {
   if (!Array.isArray(raw) || !raw.length || raw.length > 12) throw new Error("Suite d'actions vide ou trop longue.");
+  const ids = new Set(apps.map((a) => a.id));
+  let opened = false;
+  let waited = 0;
   return raw.map((s: Record<string, unknown>) => {
-    const action = s.action as PcStep["action"];
-    if (!(ACTIONS as readonly string[]).includes(action)) throw new Error(`Action inconnue : ${action}`);
-    const step: PcStep = { action };
-    for (const k of ["app", "url", "text", "key", "ms"]) if (s[k] !== null && s[k] !== undefined) step[k] = s[k];
-    return step;
+    switch (s?.action) {
+      case "open_app":
+        if (typeof s.app !== "string" || !ids.has(s.app)) throw new Error(`App inconnue sur ce PC : ${String(s.app)}`);
+        opened = true;
+        return { action: "open_app", app: s.app };
+      case "open_url": {
+        let u: URL;
+        try {
+          u = new URL(String(s.url));
+        } catch {
+          throw new Error("URL invalide.");
+        }
+        if (u.protocol !== "https:" || u.username || u.password || u.href.length > 2000 || /[\\,\s"]/.test(String(s.url))) {
+          throw new Error("URL refusée (https simple uniquement).");
+        }
+        opened = true;
+        return { action: "open_url", url: u.href };
+      }
+      case "type_text":
+        if (!opened) throw new Error("Saisie refusée : aucune app ouverte par Jarvis dans cette suite.");
+        if (typeof s.text !== "string" || !s.text || s.text.length > 4000) throw new Error("Texte vide ou trop long.");
+        return { action: "type_text", text: s.text };
+      case "press_key":
+        if (!["enter", "tab", "escape"].includes(String(s.key))) throw new Error("Touche non autorisée.");
+        return { action: "press_key", key: String(s.key) };
+      case "wait": {
+        const ms = Math.min(10_000, Math.max(0, Math.round(Number(s.ms) || 0)));
+        waited += ms;
+        if (waited > MAX_TOTAL_WAIT_MS) throw new Error("Attente totale trop longue.");
+        return { action: "wait", ms };
+      }
+      default:
+        throw new Error(`Action inconnue : ${String(s?.action)}`);
+    }
   });
 }
 
@@ -104,7 +139,7 @@ export async function runPcTool(pc: PcAccess, name: string, input: Record<string
     if (!desktop.remote_enabled) {
       return "Les commandes à distance sont désactivées sur le PC (menu de Jarvis dans la barre des tâches).";
     }
-    const steps = cleanSteps(input.steps);
+    const steps = cleanSteps(input.steps, (desktop.apps ?? []) as Array<{ id: string }>);
     const summary = String(input.summary ?? "Commande Jarvis").slice(0, 120);
     const { data: cmd, error } = await pc.admin
       .from("pc_commands")

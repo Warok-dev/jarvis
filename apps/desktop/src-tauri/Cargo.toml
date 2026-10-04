@@ -1,6 +1,6 @@
 [package]
 name = "jarvis-desktop"
-version = "0.1.0"
+version = "0.2.0"
 description = "Jarvis : assistant personnel, application de bureau"
 edition = "2021"
 
@@ -34,6 +34,9 @@ enigo = "0.2"
 tract-onnx = "0.23"
 # Capture du micro pour le mot d'activation.
 cpal = "0.15"
+# Ouverture d'URL sans shell et vérification de la fenêtre au premier plan.
+url = "2"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }
 
 [profile.release]
 # Binaire léger : Jarvis tourne en permanence.
