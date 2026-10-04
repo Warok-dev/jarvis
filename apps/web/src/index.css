@@ -423,3 +423,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   background: transparent; border: 1px solid var(--line); border-radius: 999px;
   padding: 0 6px; height: 22px;
 }
+
+.plan-subtitle { margin-top: 8px !important; }
+.plan-busy-row { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr); gap: 6px; align-items: center; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.plan-busy-row .ghost { justify-self: end; }
+.plan-busy-row input, .plan-busy-row select {
+  font: inherit; font-size: 16px; color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 4px;
+}
+.plan-busy-row input[type="time"] { width: 5.4em; }
+.plan-busy-row input[type="time"]::-webkit-calendar-picker-indicator { display: none; }
+.plan-busy-label { min-width: 0; grid-column: 1 / -1; }
+.plan-add { align-self: flex-start; font-size: 14px; }

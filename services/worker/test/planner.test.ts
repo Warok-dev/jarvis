@@ -66,4 +66,11 @@ assert.deepEqual(serre.unscheduled, [{ taskId: "ce-soir", missingMinutes: 60 }])
 // Échéance passée ou tâche terminée : ignorées.
 assert.equal(plan([{ id: "passe", dueAt: torontoTime(2026, 10, 1, 12, 0), minutes: 60 }], [], P, now).blocks.length, 0);
 
+// Occupations fixes hebdomadaires : un cours chaque lundi 18 h 30–20 h, deux lundis de suite.
+const avecCours = { ...P, busyWeekly: [{ weekday: 1, start: "18:30", end: "20:00", label: "cours" }] };
+const libres = freeIntervals(avecCours, [], now, 7).filter((i) => show(i.start).startsWith("lun."));
+assert.deepEqual(libres.map((i) => `${show(i.start)}→${show(i.end)}`), [
+  "lun. 18 h 00→lun. 18 h 30", "lun. 20 h 00→lun. 22 h 30", "lun. 18 h 00→lun. 18 h 30", "lun. 20 h 00→lun. 22 h 30",
+]);
+
 console.log("planner : tous les tests passent");

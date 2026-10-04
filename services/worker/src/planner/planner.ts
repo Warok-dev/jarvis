@@ -10,8 +10,14 @@ export interface Window {
   end: string; // "22:00"
 }
 
+export interface WeeklyBusy extends Window {
+  label?: string; // « CEG3555 cours », « travail »…
+}
+
 export interface Preferences {
   windows: Window[];
+  /** Occupations fixes chaque semaine (cours, travail) : jamais de révision pendant. */
+  busyWeekly?: WeeklyBusy[];
   maxBlockMinutes: number; // durée maximale d'un bloc
   minBlockMinutes: number; // en dessous, un créneau n'est pas utilisé
   breakMinutes: number; // pause entre deux blocs
@@ -29,6 +35,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   breakMinutes: 15,
   dailyCapMinutes: 240,
   bufferBeforeDueMinutes: 120,
+  busyWeekly: [],
 };
 
 export interface Task {
@@ -125,20 +132,24 @@ export function freeIntervals(prefs: Preferences, busy: Interval[], from: Date, 
   // Départ arrondi au quart d'heure suivant.
   const start = new Date(Math.ceil(from.getTime() / (15 * MIN)) * 15 * MIN);
   const out: Interval[] = [];
+  const weekly: Interval[] = [];
   const first = localParts(start);
+  const at = (p: ReturnType<typeof localParts>, w: Window) => {
+    const [sh, sm] = w.start.split(":").map(Number);
+    const [eh, em] = w.end.split(":").map(Number);
+    return { start: torontoTime(p.y, p.m, p.d, sh, sm), end: torontoTime(p.y, p.m, p.d, eh, em) };
+  };
   for (let i = 0; i <= days; i++) {
     const noon = torontoTime(first.y, first.m, first.d + i, 12, 0); // midi : jamais ambigu
     const p = localParts(noon);
     for (const w of prefs.windows.filter((w) => w.weekday === p.weekday)) {
-      const [sh, sm] = w.start.split(":").map(Number);
-      const [eh, em] = w.end.split(":").map(Number);
-      const s = torontoTime(p.y, p.m, p.d, sh, sm);
-      const e = torontoTime(p.y, p.m, p.d, eh, em);
+      const { start: s, end: e } = at(p, w);
       const clipped = { start: s < start ? start : s, end: e };
       if (clipped.end > clipped.start) out.push(clipped);
     }
+    for (const b of (prefs.busyWeekly ?? []).filter((b) => b.weekday === p.weekday)) weekly.push(at(p, b));
   }
-  return subtract(out, busy)
+  return subtract(out, [...busy, ...weekly])
     .filter((i) => i.end.getTime() - i.start.getTime() >= prefs.minBlockMinutes * MIN)
     .sort((a, b) => a.start.getTime() - b.start.getTime());
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchPreferences, replan, savePreferences, type Preferences } from "../lib/plan";
+import { fetchPreferences, replan, savePreferences, type Preferences, type WeeklyBusy } from "../lib/plan";
 
 // Lundi d'abord, comme dans un agenda.
 const DAYS = [
@@ -15,12 +15,14 @@ type DayRow = { on: boolean; start: string; end: string };
 export function PlanSettings({ onSaved }: { onSaved: () => void }) {
   const [prefs, setPrefs] = useState<Preferences | null>(null);
   const [rows, setRows] = useState<Record<number, DayRow>>({});
+  const [busyWeekly, setBusyWeekly] = useState<WeeklyBusy[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPreferences().then((p) => {
       setPrefs(p);
+      setBusyWeekly(p.busyWeekly ?? []);
       const r: Record<number, DayRow> = {};
       for (const [d] of DAYS) {
         const w = p.windows.find((x) => x.weekday === d);
@@ -32,14 +34,16 @@ export function PlanSettings({ onSaved }: { onSaved: () => void }) {
 
   if (!prefs) return null;
   const update = (d: number, patch: Partial<DayRow>) => setRows((r) => ({ ...r, [d]: { ...r[d], ...patch } }));
-  const invalid = DAYS.some(([d]) => rows[d].on && rows[d].end <= rows[d].start);
+  const invalid = DAYS.some(([d]) => rows[d].on && rows[d].end <= rows[d].start) || busyWeekly.some((b) => b.end <= b.start);
+  const updateBusy = (i: number, patch: Partial<WeeklyBusy>) =>
+    setBusyWeekly((list) => list.map((b, j) => (j === i ? { ...b, ...patch } : b)));
 
   async function save() {
     setBusy(true);
     setError(null);
     try {
       const windows = DAYS.filter(([d]) => rows[d].on).map(([d]) => ({ weekday: d, start: rows[d].start, end: rows[d].end }));
-      await savePreferences({ ...prefs!, windows });
+      await savePreferences({ ...prefs!, windows, busyWeekly });
       await replan();
       onSaved();
     } catch (e) {
@@ -68,6 +72,22 @@ export function PlanSettings({ onSaved }: { onSaved: () => void }) {
           />
         </div>
       ))}
+      <p className="muted plan-subtitle">Cours et engagements fixes (jamais de révision pendant)</p>
+      {busyWeekly.map((b, i) => (
+        <div key={i} className="plan-busy-row">
+          <select value={b.weekday} onChange={(e) => updateBusy(i, { weekday: Number(e.target.value) })} aria-label="Jour">
+            {DAYS.map(([d, label]) => <option key={d} value={d}>{short(label)}</option>)}
+          </select>
+          <input type="time" step={900} value={b.start} aria-label="Début" onChange={(e) => updateBusy(i, { start: e.target.value })} />
+          <input type="time" step={900} value={b.end} aria-label="Fin" onChange={(e) => updateBusy(i, { end: e.target.value })} />
+          <button className="ghost" aria-label="Retirer" onClick={() => setBusyWeekly((l) => l.filter((_, j) => j !== i))}>✕</button>
+          <input className="plan-busy-label" value={b.label ?? ""} placeholder="Nom (ex. cours CEG3555)" aria-label="Nom"
+            onChange={(e) => updateBusy(i, { label: e.target.value.slice(0, 40) })} />
+        </div>
+      ))}
+      <button className="ghost plan-add" onClick={() => setBusyWeekly((l) => [...l, { weekday: 1, start: "08:30", end: "10:00", label: "" }])}>
+        + Ajouter un cours ou un engagement
+      </button>
       <label className="plan-cap">
         Maximum par jour
         <select value={prefs.dailyCapMinutes} onChange={(e) => setPrefs({ ...prefs, dailyCapMinutes: Number(e.target.value) })}>

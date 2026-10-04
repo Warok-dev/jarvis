@@ -1,8 +1,8 @@
 import { supabase } from "./supabase";
-import { DEFAULT_PREFERENCES, type Preferences } from "../../../../services/worker/src/planner/planner.ts";
+import { DEFAULT_PREFERENCES, type Preferences, type WeeklyBusy } from "../../../../services/worker/src/planner/planner.ts";
 
 export { estimateMinutes } from "../../../../services/worker/src/planner/planner.ts";
-export type { Preferences };
+export type { Preferences, WeeklyBusy };
 
 export interface StudyBlock {
   id: number;
