@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { PushSettings } from "./PushSettings";
+import { Assistant } from "./Assistant";
 import {
   fetchAssignments, formatDue, groupOf, GROUP_LABELS, setStatus, subscribeAssignments,
   type Assignment, type GroupKey, type Status,
@@ -109,6 +110,8 @@ export function AssignmentList({ userId }: { userId: string }) {
           </section>
         );
       })}
+
+      <Assistant />
     </main>
   );
 }

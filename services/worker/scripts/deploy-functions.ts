@@ -1,7 +1,7 @@
 // Pousse les secrets depuis .env puis déploie les Edge Functions. Rien de secret n'est affiché.
 // Usage : tsx scripts/deploy-functions.ts [nom…]   (par défaut : toutes)
 import { spawnSync } from "node:child_process";
-import { readdirSync, rmSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { requireEnv } from "./env.ts";
@@ -19,7 +19,11 @@ function supabase(args: string[]) {
   if (r.status !== 0) process.exit(1);
 }
 
-const secrets = {
+// Clé publique de l'app (déjà livrée au navigateur) : sert à l'assistant pour agir avec la session de l'utilisateur.
+const publishable = readFileSync(new URL("apps/web/.env.local", root), "utf8").match(/^VITE_SUPABASE_PUBLISHABLE_KEY=(.+)$/m)?.[1].trim();
+if (!publishable) throw new Error("VITE_SUPABASE_PUBLISHABLE_KEY introuvable dans apps/web/.env.local");
+
+const secrets: Record<string, string> = {
   JARVIS_SECRET_KEY: requireEnv("SUPABASE_SECRET_KEY"),
   JARVIS_USER_ID: requireEnv("SUPABASE_USER_ID"),
   BRIGHTSPACE_ICAL_URL: requireEnv("BRIGHTSPACE_ICAL_URL"),
@@ -27,7 +31,11 @@ const secrets = {
   VAPID_PUBLIC_KEY: requireEnv("VAPID_PUBLIC_KEY"),
   VAPID_PRIVATE_KEY: requireEnv("VAPID_PRIVATE_KEY"),
   VAPID_SUBJECT: requireEnv("VAPID_SUBJECT"),
+  JARVIS_PUBLISHABLE_KEY: publishable,
 };
+// Facultative tant que l'assistant n'est pas branché.
+if (process.env.ANTHROPIC_API_KEY) secrets.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+else console.log("ANTHROPIC_API_KEY absente de .env : l'assistant répondra qu'il n'est pas encore branché.");
 const file = join(tmpdir(), `jarvis-secrets-${process.pid}.env`);
 writeFileSync(file, Object.entries(secrets).map(([k, v]) => `${k}=${v}`).join("\n"));
 try { supabase(["secrets", "set", "--env-file", file]); } finally { rmSync(file); }
