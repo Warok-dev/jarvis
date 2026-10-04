@@ -371,3 +371,29 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .pc-indicator .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
 .pc-indicator.on { color: var(--done); border-color: var(--done); }
 .pc-indicator.on .dot { background: var(--done); }
+
+/* --- Planning --- */
+
+.plan { margin-bottom: 24px; }
+.plan-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 4px 8px; }
+.plan-head h2 {
+  font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); margin: 0;
+}
+.plan-list {
+  list-style: none; margin: 0; padding: 4px 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+}
+.plan-day { font-size: 13px; font-weight: 600; color: var(--muted); padding: 10px 14px 4px; }
+.plan-block { display: flex; gap: 12px; padding: 6px 14px; font-size: 14px; align-items: baseline; }
+.plan-block.now { background: var(--accent-soft); }
+.plan-time { flex: none; width: 112px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.plan-what { min-width: 0; overflow-wrap: anywhere; }
+.plan-empty { margin: 0 4px; font-size: 14px; }
+.plan-more { margin: 6px 4px 0; font-size: 14px; }
+.plan-warning {
+  background: var(--late-soft); color: var(--text);
+  border-radius: var(--radius); padding: 10px 14px; margin-bottom: 10px; font-size: 14px;
+}
+.plan-warning strong { color: var(--late); }
+.plan-warning p { margin: 4px 0 0; }

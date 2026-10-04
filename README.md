@@ -20,14 +20,14 @@ Brightspace (flux iCal) ──► sync-brightspace (Edge Function, toutes les 30
 | `services/worker/src` | Code partagé Node/Deno : parseur iCal, synchronisation, Web Push (RFC 8291/8292), notifications, assistant |
 | `services/worker/scripts` | Outils locaux : `check-feed`, `sync-once`, `sql.ts`, `deploy-functions.ts`… |
 | `supabase/migrations` | Schéma SQL (à appliquer dans l'ordre) |
-| `supabase/functions` | Edge Functions : `sync-brightspace`, `notify`, `push-test`, `assistant`, `device` |
+| `supabase/functions` | Edge Functions : `sync-brightspace`, `notify`, `push-test`, `assistant`, `device`, `plan` |
 | `apps/web` | App React (Vite), installable sur iPhone, déployée sur Cloudflare Pages |
 | `apps/desktop` | App de bureau Tauri : icône dans la barre des tâches, démarrage avec Windows |
 
 ## En ligne
 
 - App : https://jarvis-4s2.pages.dev (déployée à chaque `git push` sur `main`)
-- Planification (pg_cron) : `sync-brightspace` toutes les 30 min, `notify` toutes les 5 min
+- Planification (pg_cron) : `sync-brightspace` toutes les 30 min, `notify` toutes les 5 min, `plan` chaque matin
 - Notifications : nouveaux devoirs (regroupés), échéance modifiée, rappels la veille et 3 h avant, récap à 8 h ; rien entre 23 h et 8 h
 
 ## Le PC et le cloud
@@ -73,5 +73,6 @@ cd apps/desktop && npx tauri build         # installateur Windows (NSIS)
 - [x] Contrôle du PC, niveau 1 : actions en liste blanche via l'assistant (« ouvre VS Code »)
 - [ ] Mot d'activation « Jarvis » sur PC (Porcupine/openWakeWord)
 - [ ] Mail uOttawa (Microsoft Graph)
-- [ ] Emploi du temps et planning de révision
+- [x] Planning de révision : durées estimées, disponibilités, EDF, alerte « temps manquant », récap du matin
+- [ ] Horaire de cours uOttawa (prêt : renseigner `TIMETABLE_ICAL_URL`)
 - [ ] Contrôle du PC, niveau 2 : recettes UI Automation par app

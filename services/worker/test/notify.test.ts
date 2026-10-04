@@ -64,3 +64,10 @@ assert.equal(planDigest("u", week, keys, morning), null); // une seule fois par 
 assert.equal(planDigest("u", week, new Set(), new Date("2026-10-05T15:00:00Z")), null); // 11 h : trop tard
 assert.equal(planDigest("u", [], new Set(), morning)!.kind, "skipped");
 console.log("récap du matin : OK");
+
+// 6. Récap avec le planning du jour
+const withPlan = planDigest("u", week, new Set(), morning, [
+  { starts_at: new Date(morning.getTime() + 10 * 3600e3).toISOString(), course_code: "ELG3525", title: "Lab 1" },
+])!;
+assert.match(withPlan.body!, /Au programme : 18 h 20 ELG3525 Lab 1$/);
+console.log("récap avec planning : OK");

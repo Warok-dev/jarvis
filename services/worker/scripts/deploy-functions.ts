@@ -35,6 +35,8 @@ const secrets: Record<string, string> = {
 };
 // Facultative tant que l'assistant n'est pas branché.
 if (process.env.ANTHROPIC_API_KEY) secrets.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+// Facultatif : horaire de cours uOttawa (flux iCal), importé chaque matin par la fonction plan.
+if (process.env.TIMETABLE_ICAL_URL) secrets.TIMETABLE_ICAL_URL = process.env.TIMETABLE_ICAL_URL;
 else console.log("ANTHROPIC_API_KEY absente de .env : l'assistant répondra qu'il n'est pas encore branché.");
 const file = join(tmpdir(), `jarvis-secrets-${process.pid}.env`);
 writeFileSync(file, Object.entries(secrets).map(([k, v]) => `${k}=${v}`).join("\n"));

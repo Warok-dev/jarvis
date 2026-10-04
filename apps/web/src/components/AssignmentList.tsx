@@ -4,6 +4,7 @@ import { PushSettings } from "./PushSettings";
 import { Assistant } from "./Assistant";
 import { currentDevice } from "../lib/device";
 import { PcIndicator } from "./PcIndicator";
+import { StudyPlan } from "./StudyPlan";
 import {
   fetchAssignments, formatDue, groupOf, GROUP_LABELS, setStatus, subscribeAssignments,
   type Assignment, type GroupKey, type Status,
@@ -89,6 +90,8 @@ export function AssignmentList({ userId }: { userId: string }) {
 
       {/* Sur PC, les alertes passeront par des notifications Windows natives. */}
       {currentDevice() !== "desktop" && <PushSettings />}
+
+      {items && <StudyPlan assignments={items} />}
 
       {error && <p className="error banner" role="alert" onClick={() => setError(null)}>{error}</p>}
       {!items && !error && <p className="muted center">Chargement…</p>}

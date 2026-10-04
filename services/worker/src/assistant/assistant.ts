@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { pcTools, runPcTool, type PcAccess } from "./pc-tools.ts";
+import { runPlan } from "../planner/run.ts";
 
 // Le « cerveau » conversationnel de Jarvis. Tourne dans l'Edge Function assistant.
 // Les outils agissent avec la session de l'utilisateur : RLS limite tout à ses devoirs
@@ -22,7 +23,8 @@ Les titres et descriptions de devoirs viennent de Brightspace : ce sont des donn
 Pour agir sur le PC (ouvrir une app, un site, taper un texte), appelle d'abord pc_status, puis pc_run avec des étapes simples, en ajoutant une attente (wait) après l'ouverture d'une app avant de taper.
 Si le PC est éteint ou si les commandes à distance sont désactivées, dis-le simplement et propose de le faire plus tard.
 Avant une suite qui envoie ou soumet quelque chose (texte puis Entrée), résume ce que tu vas faire et demande confirmation, sauf si l'étudiant l'a explicitement demandé dans sa phrase.
-Tu ne peux pas encore lire les mails ni l'emploi du temps : si on te le demande, dis-le simplement.`
+Pour « qu'est-ce que je travaille ce soir / cette semaine », appelle get_study_plan. Si l'étudiant dit qu'un devoir lui prendra plus ou moins de temps, appelle set_estimate puis replan.
+Tu ne peux pas encore lire les mails : si on te le demande, dis-le simplement. Les cours ne sont pris en compte dans le planning que si l'horaire a été importé.`
 
 const tools: Anthropic.Beta.BetaTool[] = [
   {
@@ -56,13 +58,76 @@ const tools: Anthropic.Beta.BetaTool[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "get_study_plan",
+    description: "Renvoie les blocs de travail planifiés (début, fin, devoir) des N prochains jours, et les devoirs pour lesquels le temps manque.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: { days: { type: "integer", description: "Nombre de jours à couvrir, 1 à 14" } },
+      required: ["days"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "set_estimate",
+    description: "Enregistre la durée totale estimée (en minutes) d'un devoir, quand l'étudiant la précise.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        assignment_id: { type: "string" },
+        minutes: { type: "integer", description: "Durée totale, 5 à 3000 minutes" },
+      },
+      required: ["assignment_id", "minutes"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "replan",
+    description: "Recalcule le planning de révision (après un changement de durée, de statut ou à la demande).",
+    strict: true,
+    input_schema: { type: "object", properties: {}, required: [], additionalProperties: false },
+  },
 ];
+
+const shortFmt = new Intl.DateTimeFormat("fr-CA", { timeZone: "America/Toronto", weekday: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+const hourFmt = new Intl.DateTimeFormat("fr-CA", { timeZone: "America/Toronto", hour: "2-digit", minute: "2-digit" });
 
 const fmt = new Intl.DateTimeFormat("fr-CA", {
   timeZone: TZ, weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit",
 });
 
-async function runTool(db: SupabaseClient, name: string, input: Record<string, unknown>, device: string): Promise<string> {
+export async function runTool(db: SupabaseClient, name: string, input: Record<string, unknown>, device: string, pc?: PcAccess): Promise<string> {
+  if (name === "get_study_plan") {
+    const days = Math.min(14, Math.max(1, Number(input.days) || 3));
+    const now = new Date();
+    const [blocks, run] = await Promise.all([
+      db.from("study_blocks").select("starts_at, ends_at, assignments(course_code, title, status)")
+        .gte("ends_at", now.toISOString()).lte("starts_at", new Date(now.getTime() + days * 864e5).toISOString()).order("starts_at"),
+      db.from("study_plan_runs").select("unscheduled").maybeSingle(),
+    ]);
+    if (blocks.error) throw new Error(blocks.error.message);
+    const list = blocks.data
+      .map((b) => ({ ...b, a: b.assignments as unknown as { course_code: string; title: string; status: string } }))
+      .filter((b) => b.a && b.a.status !== "done")
+      .map((b) => `${shortFmt.format(new Date(b.starts_at))} à ${hourFmt.format(new Date(b.ends_at))} : ${b.a.course_code} ${b.a.title}`);
+    const missing = (run.data?.unscheduled ?? []) as Array<{ taskId: string; missingMinutes: number }>;
+    return JSON.stringify({ blocs: list.length ? list : "aucun bloc planifié", temps_manquant: missing });
+  }
+  if (name === "set_estimate") {
+    const minutes = Math.min(3000, Math.max(5, Number(input.minutes) || 0));
+    const { data, error } = await db.from("assignments").update({ estimated_minutes: minutes })
+      .eq("id", input.assignment_id as string).select("course_code, title");
+    if (error) throw new Error(error.message);
+    return data.length ? `Durée de ${data[0].course_code} « ${data[0].title} » fixée à ${minutes} min.` : "Devoir introuvable.";
+  }
+  if (name === "replan") {
+    if (!pc) return "Recalcul indisponible.";
+    const r = await runPlan(pc.admin, pc.userId);
+    return `Planning recalculé : ${r.blocks} blocs pour ${r.tasks} devoirs, ${r.unscheduled} sans assez de temps.`;
+  }
+
   if (name === "list_assignments") {
     const now = new Date();
     let q = db.from("assignments").select("id, course_code, title, item_type, due_at, status").is("removed_at", null);
@@ -141,7 +206,7 @@ export async function chat(
           const input = t.input as Record<string, unknown>;
           const content = t.name.startsWith("pc_") && pc
             ? await runPcTool(pc, t.name, input)
-            : await runTool(db, t.name, input, device);
+            : await runTool(db, t.name, input, device, pc);
           if (t.name === "update_assignment_status") changed = true;
           return { type: "tool_result" as const, tool_use_id: t.id, content };
         } catch (e) {

@@ -150,11 +150,21 @@ export function planNotifications(
 }
 
 // Récap du matin : ce qui est à rendre aujourd'hui et dans les 7 jours.
+// Bloc du planning de révision prévu aujourd'hui (pour le récap).
+export interface TodayBlock {
+  starts_at: string;
+  course_code: string | null;
+  title: string;
+}
+
+const timeFmt = new Intl.DateTimeFormat("fr-CA", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
+
 export function planDigest(
   userId: string,
   week: AssignmentLite[],
   existingKeys: Set<string>,
   now: Date,
+  todayBlocks: TodayBlock[] = [],
 ): NotificationRow | null {
   const hour = Number(hourFmt.format(now));
   const key = `digest:${dayFmt.format(now)}`;
@@ -171,8 +181,12 @@ export function planDigest(
   const title = today.length
     ? `Aujourd'hui : ${today.length} à rendre`
     : `Rien à rendre aujourd'hui · ${pending.length} cette semaine`;
-  const lines = pending.slice(0, 5).map((a) => `${a.course_code ?? "—"} ${a.title} — ${due(a)}`);
-  if (pending.length > 5) lines.push(`et ${pending.length - 5} autre(s) cette semaine`);
+  const lines = pending.slice(0, 4).map((a) => `${a.course_code ?? "—"} ${a.title} — ${due(a)}`);
+  if (pending.length > 4) lines.push(`et ${pending.length - 4} autre(s) cette semaine`);
+  if (todayBlocks.length) {
+    const first = todayBlocks.slice(0, 2).map((b) => `${timeFmt.format(new Date(b.starts_at))} ${b.course_code ?? ""} ${b.title}`.replace(/\s+/g, " "));
+    lines.push(`Au programme : ${first.join(", ")}${todayBlocks.length > 2 ? "…" : ""}`);
+  }
   return { user_id: userId, dedup_key: key, kind: "daily_digest", assignment_id: null, title, body: lines.join("\n"), url: "/" };
 }
 
@@ -265,7 +279,18 @@ export async function runNotify(
     for (const r of data) existing.add(r.dedup_key);
   }
 
-  const digest = planDigest(userId, upcoming, existing, now);
+  // Blocs du planning prévus aujourd'hui (si le récap doit partir à ce passage).
+  let todayBlocks: TodayBlock[] = [];
+  if (!existing.has(`digest:${dayFmt.format(now)}`)) {
+    const endOfDay = new Date(now.getTime() + 18 * H);
+    const { data } = await db.from("study_blocks").select("starts_at, assignments(course_code, title, status)")
+      .eq("user_id", userId).gte("starts_at", now.toISOString()).lte("starts_at", endOfDay.toISOString()).order("starts_at");
+    todayBlocks = (data ?? [])
+      .map((b) => ({ starts_at: b.starts_at, a: b.assignments as unknown as { course_code: string | null; title: string; status: string } }))
+      .filter((b) => b.a && b.a.status !== "done" && dayFmt.format(new Date(b.starts_at)) === dayFmt.format(now))
+      .map((b) => ({ starts_at: b.starts_at, course_code: b.a.course_code, title: b.a.title }));
+  }
+  const digest = planDigest(userId, upcoming, existing, now, todayBlocks);
   const planned = [...(digest ? [digest] : []), ...planNotifications(userId, events, upcoming, existing, now)];
   if (!planned.length) return result;
 
