@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Assignment } from "../lib/assignments";
 import { fetchPlan, replan, type PlanData } from "../lib/plan";
+import { PlanSettings } from "./PlanSettings";
 
 const TZ = "America/Toronto";
 const dayFmt = new Intl.DateTimeFormat("fr-CA", { timeZone: TZ, weekday: "long", day: "numeric", month: "long" });
@@ -18,16 +19,17 @@ function dayLabel(d: Date, now: Date): string {
 const hours = (min: number) => (min >= 60 ? `${Math.round((min / 60) * 2) / 2} h` : `${min} min`);
 
 // Planning de révision proposé par Jarvis (recalculé chaque matin, ou à la demande).
-export function StudyPlan({ assignments, initial }: { assignments: Assignment[]; initial?: PlanData }) {
+export function StudyPlan({ assignments, initial, version = 0 }: { assignments: Assignment[]; initial?: PlanData; version?: number }) {
   const [plan, setPlan] = useState<PlanData | null>(initial ?? null);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState(false);
 
   const load = useCallback(() => fetchPlan().then(setPlan, (e: Error) => setError(e.message)), []);
   useEffect(() => {
     if (!initial) void load();
-  }, [load, initial]);
+  }, [load, initial, version]); // version : la liste a demandé un recalcul
 
   const byId = useMemo(() => new Map(assignments.map((a) => [a.id, a])), [assignments]);
   const now = new Date();
@@ -55,8 +57,13 @@ export function StudyPlan({ assignments, initial }: { assignments: Assignment[];
     <section className="plan">
       <div className="plan-head">
         <h2>Planning</h2>
-        <button className="ghost" onClick={recompute} disabled={busy}>{busy ? "Calcul…" : "Recalculer"}</button>
+        <div className="plan-actions">
+          <button className="ghost" onClick={() => setSettings((v) => !v)} aria-expanded={settings}>Disponibilités</button>
+          <button className="ghost" onClick={recompute} disabled={busy}>{busy ? "Calcul…" : "Recalculer"}</button>
+        </div>
       </div>
+
+      {settings && <PlanSettings onSaved={() => { setSettings(false); void load(); }} />}
 
       {missing.length > 0 && (
         <div className="plan-warning" role="status">

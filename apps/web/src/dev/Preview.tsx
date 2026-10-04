@@ -5,8 +5,8 @@ import type { Assignment } from "../lib/assignments";
 
 const h = (offset: number) => new Date(Date.now() + offset * 3_600_000).toISOString();
 const sample: Assignment[] = [
-  { id: "a", course_code: "GNG2501B", title: "Soumission de lab soudage", item_type: "item", due_at: h(40), status: "todo", url: null, removed_at: null },
-  { id: "b", course_code: "CEG3555", title: "Devoir 1", item_type: "item", due_at: h(41), status: "in_progress", url: null, removed_at: null },
+  { id: "a", course_code: "GNG2501B", title: "Soumission de lab soudage", item_type: "item", due_at: h(40), status: "todo", url: null, removed_at: null, estimated_minutes: null },
+  { id: "b", course_code: "CEG3555", title: "Devoir 1", item_type: "item", due_at: h(41), status: "in_progress", url: null, removed_at: null, estimated_minutes: null },
 ];
 const samplePlan = {
   computedAt: h(0),

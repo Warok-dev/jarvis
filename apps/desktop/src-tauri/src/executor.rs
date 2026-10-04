@@ -37,6 +37,8 @@ pub fn default_apps() -> AppList {
         ("explorateur", "Explorateur de fichiers", "explorer.exe"),
         ("vscode", "Visual Studio Code", "code"),
         ("chrome", "Google Chrome", "chrome"),
+        // App ChatGPT du Microsoft Store (GPT-6 Astra) : lancée par son identifiant d'app Windows.
+        ("chatgpt", "ChatGPT (GPT-6 Astra)", r"shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App"),
     ] {
         apps.insert(id.into(), AppEntry { label: label.into(), target: target.into() });
     }
@@ -207,6 +209,18 @@ mod tests {
         let parsed = validate(&steps, &default_apps()).unwrap();
         assert_eq!(parsed[1], Step::Wait(MAX_WAIT_MS));
         assert_eq!(parsed[3], Step::PressKey("enter"));
+    }
+
+    #[test]
+    fn scenario_donner_un_devoir_a_chatgpt() {
+        let steps = vec![
+            json!({"action": "open_app", "app": "chatgpt"}),
+            json!({"action": "wait", "ms": 3000}),
+            json!({"action": "type_text", "text": "Voici l'énoncé du devoir 2 de CEG3555 : …"}),
+            json!({"action": "press_key", "key": "enter"}),
+        ];
+        let parsed = validate(&steps, &default_apps()).unwrap();
+        assert!(matches!(&parsed[0], Step::OpenApp(a) if a.target.starts_with("shell:AppsFolder")));
     }
 
     #[test]

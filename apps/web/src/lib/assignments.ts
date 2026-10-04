@@ -12,9 +12,10 @@ export interface Assignment {
   status: Status;
   url: string | null;
   removed_at: string | null;
+  estimated_minutes: number | null;
 }
 
-const COLUMNS = "id, course_code, title, item_type, due_at, status, url, removed_at";
+const COLUMNS = "id, course_code, title, item_type, due_at, status, url, removed_at, estimated_minutes";
 
 export async function fetchAssignments(): Promise<Assignment[]> {
   const { data, error } = await supabase

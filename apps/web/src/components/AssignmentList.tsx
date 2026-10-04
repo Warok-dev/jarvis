@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { PushSettings } from "./PushSettings";
 import { Assistant } from "./Assistant";
 import { currentDevice } from "../lib/device";
 import { PcIndicator } from "./PcIndicator";
 import { StudyPlan } from "./StudyPlan";
+import { estimateMinutes, replan, setEstimate } from "../lib/plan";
 import {
   fetchAssignments, formatDue, groupOf, GROUP_LABELS, setStatus, subscribeAssignments,
   type Assignment, type GroupKey, type Status,
@@ -17,6 +18,7 @@ export function AssignmentList({ userId }: { userId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  const [planVersion, setPlanVersion] = useState(0);
   // Devoir ouvert depuis une notification (?a=<id>) : on le met en évidence.
   const [focusId, setFocusId] = useState(() => new URLSearchParams(location.search).get("a"));
 
@@ -73,6 +75,19 @@ export function AssignmentList({ userId }: { userId: string }) {
     }
   }
 
+  // Durée modifiée : on enregistre, puis on recalcule le planning une fois les changements finis.
+  const replanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  async function changeEstimate(a: Assignment, minutes: number) {
+    setItems((list) => list?.map((x) => (x.id === a.id ? { ...x, estimated_minutes: minutes } : x)) ?? list);
+    try {
+      await setEstimate(a.id, minutes);
+      if (replanTimer.current) clearTimeout(replanTimer.current);
+      replanTimer.current = setTimeout(() => replan().then(() => setPlanVersion((v) => v + 1)), 1200);
+    } catch (e) {
+      setError(`Impossible d'enregistrer la durée : ${(e as Error).message}`);
+    }
+  }
+
   const pending = items ? items.length - groups.get("done")!.length : 0;
 
   return (
@@ -91,7 +106,7 @@ export function AssignmentList({ userId }: { userId: string }) {
       {/* Sur PC, les alertes passeront par des notifications Windows natives. */}
       {currentDevice() !== "desktop" && <PushSettings />}
 
-      {items && <StudyPlan assignments={items} />}
+      {items && <StudyPlan assignments={items} version={planVersion} />}
 
       {error && <p className="error banner" role="alert" onClick={() => setError(null)}>{error}</p>}
       {!items && !error && <p className="muted center">Chargement…</p>}
@@ -113,7 +128,7 @@ export function AssignmentList({ userId }: { userId: string }) {
             </h2>
             {!collapsed && (
               <ul>
-                {list.map((a) => <Row key={a.id} a={a} now={now} focused={a.id === focusId} onChange={change} />)}
+                {list.map((a) => <Row key={a.id} a={a} now={now} focused={a.id === focusId} onChange={change} onEstimate={changeEstimate} />)}
               </ul>
             )}
           </section>
@@ -125,9 +140,14 @@ export function AssignmentList({ userId }: { userId: string }) {
   );
 }
 
-function Row({ a, now, focused, onChange }: {
-  a: Assignment; now: Date; focused: boolean; onChange: (a: Assignment, s: Status) => void;
+const DURATIONS = [30, 45, 60, 90, 120, 180, 240, 300, 360, 480, 600, 900];
+const durationLabel = (m: number) => (m < 60 ? `${m} min` : `${m / 60} h`.replace(".", ","));
+
+function Row({ a, now, focused, onChange, onEstimate }: {
+  a: Assignment; now: Date; focused: boolean;
+  onChange: (a: Assignment, s: Status) => void; onEstimate: (a: Assignment, minutes: number) => void;
 }) {
+  const estimate = a.estimated_minutes ?? estimateMinutes(a.title, a.item_type);
   const { date, relative } = formatDue(a.due_at, now);
   const done = a.status === "done";
   return (
@@ -146,6 +166,18 @@ function Row({ a, now, focused, onChange }: {
           {a.item_type === "quiz" && <span className="tag">quiz</span>}
           <span>{date}</span>
           {!done && relative && <span className="relative">{relative}</span>}
+          {!done && (
+            <select
+              className="duration"
+              value={DURATIONS.includes(estimate) ? estimate : ""}
+              onChange={(e) => onEstimate(a, Number(e.target.value))}
+              aria-label={`Durée estimée de « ${a.title} »`}
+              title="Durée estimée (sert au planning)"
+            >
+              {!DURATIONS.includes(estimate) && <option value="">≈ {durationLabel(estimate)}</option>}
+              {DURATIONS.map((m) => <option key={m} value={m}>≈ {durationLabel(m)}</option>)}
+            </select>
+          )}
         </p>
       </div>
       {!done && (

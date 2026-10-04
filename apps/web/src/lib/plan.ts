@@ -1,4 +1,8 @@
 import { supabase } from "./supabase";
+import { DEFAULT_PREFERENCES, type Preferences } from "../../../../services/worker/src/planner/planner.ts";
+
+export { estimateMinutes } from "../../../../services/worker/src/planner/planner.ts";
+export type { Preferences };
 
 export interface StudyBlock {
   id: number;
@@ -31,5 +35,22 @@ export async function fetchPlan(days = 7): Promise<PlanData> {
 
 export async function replan(): Promise<void> {
   const { error } = await supabase.functions.invoke("plan");
+  if (error) throw error;
+}
+
+export async function fetchPreferences(): Promise<Preferences> {
+  const { data } = await supabase.from("study_preferences").select("prefs").maybeSingle();
+  return { ...DEFAULT_PREFERENCES, ...(data?.prefs ?? {}) };
+}
+
+export async function savePreferences(prefs: Preferences): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Session expirée");
+  const { error } = await supabase.from("study_preferences").upsert({ user_id: user.id, prefs, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
+
+export async function setEstimate(id: string, minutes: number | null): Promise<void> {
+  const { error } = await supabase.from("assignments").update({ estimated_minutes: minutes }).eq("id", id);
   if (error) throw error;
 }
