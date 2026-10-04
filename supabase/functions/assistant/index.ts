@@ -3,7 +3,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { chat, type ChatTurn } from "../../../services/worker/src/assistant/assistant.ts";
 
-const ALLOWED_ORIGINS = ["https://jarvis-4s2.pages.dev", "http://localhost:5180"];
+// tauri.localhost : app de bureau Windows.
+const ALLOWED_ORIGINS = ["https://jarvis-4s2.pages.dev", "http://tauri.localhost", "http://localhost:5180"];
 const MAX_TURNS = 20;
 const MAX_CHARS = 2000;
 

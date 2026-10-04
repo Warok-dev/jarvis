@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { PushSettings } from "./PushSettings";
 import { Assistant } from "./Assistant";
+import { currentDevice } from "../lib/device";
 import {
   fetchAssignments, formatDue, groupOf, GROUP_LABELS, setStatus, subscribeAssignments,
   type Assignment, type GroupKey, type Status,
@@ -82,7 +83,8 @@ export function AssignmentList({ userId }: { userId: string }) {
         <button className="ghost" onClick={() => supabase.auth.signOut()}>Déconnexion</button>
       </header>
 
-      <PushSettings />
+      {/* Sur PC, les alertes passeront par des notifications Windows natives. */}
+      {currentDevice() !== "desktop" && <PushSettings />}
 
       {error && <p className="error banner" role="alert" onClick={() => setError(null)}>{error}</p>}
       {!items && !error && <p className="muted center">Chargement…</p>}

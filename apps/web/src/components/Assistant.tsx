@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { supabase } from "../lib/supabase";
+import { currentDevice } from "../lib/device";
 import { canListen, listen, speak, stopSpeaking, unlockSpeech, type ListenHandle } from "../lib/voice";
 
 type Turn = { role: "user" | "assistant"; content: string };
 type Phase = "idle" | "listening" | "thinking" | "speaking";
 
-const device = () => (window.matchMedia("(display-mode: standalone)").matches ? "mobile" : "web");
-
 async function ask(messages: Turn[]): Promise<string> {
-  const { data, error } = await supabase.functions.invoke("assistant", { body: { messages, device: device() } });
+  const { data, error } = await supabase.functions.invoke("assistant", { body: { messages, device: currentDevice() } });
   if (error) {
     // Les erreurs prévues renvoient quand même une phrase à dire.
     const body = await (error as { context?: Response }).context?.json?.().catch(() => null);

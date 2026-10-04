@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "La fenêtre principale n'a besoin d'aucune commande native pour l'instant.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

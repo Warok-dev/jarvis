@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { currentDevice } from "./device";
 
 export type Status = "todo" | "in_progress" | "done";
 
@@ -25,15 +26,10 @@ export async function fetchAssignments(): Promise<Assignment[]> {
   return data as Assignment[];
 }
 
-// Identifie l'appareil dans le journal : l'app installée sur l'écran d'accueil = mobile.
-function device(): string {
-  return window.matchMedia("(display-mode: standalone)").matches ? "mobile" : "web";
-}
-
 export async function setStatus(id: string, status: Status): Promise<void> {
   const { error } = await supabase
     .from("assignments")
-    .update({ status, status_changed_by: device() })
+    .update({ status, status_changed_by: currentDevice() })
     .eq("id", id);
   if (error) throw error;
 }

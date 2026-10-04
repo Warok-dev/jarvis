@@ -2,7 +2,8 @@
 import { createAdminClient } from "../../../services/worker/src/db.ts";
 import { sendPush } from "../../../services/worker/src/push/webpush.ts";
 
-const ALLOWED_ORIGINS = ["https://jarvis-4s2.pages.dev", "http://localhost:5180"];
+// tauri.localhost : app de bureau Windows.
+const ALLOWED_ORIGINS = ["https://jarvis-4s2.pages.dev", "http://tauri.localhost", "http://localhost:5180"];
 
 function env(name: string): string {
   const v = Deno.env.get(name);

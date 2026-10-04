@@ -38,4 +38,6 @@ function icon(size) {
 }
 
 for (const s of [180, 192, 512]) writeFileSync(new URL(`../public/icon-${s}.png`, import.meta.url), icon(s));
+// Source des icônes de l'app de bureau (npx tauri icon apps/desktop/src-tauri/app-icon.png).
+writeFileSync(new URL("../../desktop/src-tauri/app-icon.png", import.meta.url), icon(1024));
 console.log("icônes générées");
