@@ -1,22 +1,35 @@
 // Pousse les secrets depuis .env puis déploie les Edge Functions. Rien de secret n'est affiché.
 // Usage : tsx scripts/deploy-functions.ts [nom…]   (par défaut : toutes)
+//
+// Sécurité : CLI Supabase épinglée (devDependency, appelée sans shell), environnement minimal
+// pour le processus enfant (seul le jeton de gestion lui est transmis), fichier de secrets
+// temporaire privé et supprimé dans tous les cas.
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { requireEnv } from "./env.ts";
 
 const root = new URL("../../../", import.meta.url);
 const ref = new URL(requireEnv("SUPABASE_URL")).host.split(".")[0];
-const hide = (s: string) => s.split(ref).join("<ref>");
+const cli = createRequire(import.meta.url).resolve("supabase/dist/supabase.js");
 
-function supabase(args: string[]) {
-  const r = spawnSync("npx", ["-y", "supabase", ...args, "--project-ref", ref], {
-    cwd: root, encoding: "utf8", shell: true, env: process.env,
+// Seules les variables nécessaires au fonctionnement de la CLI sous Windows, plus le jeton.
+const childEnv: NodeJS.ProcessEnv = { SUPABASE_ACCESS_TOKEN: requireEnv("SUPABASE_ACCESS_TOKEN") };
+for (const k of ["PATH", "Path", "SystemRoot", "USERPROFILE", "HOME", "TEMP", "TMP", "APPDATA", "LOCALAPPDATA", "ProgramData"]) {
+  if (process.env[k]) childEnv[k] = process.env[k];
+}
+
+function supabase(args: string[]): void {
+  const r = spawnSync(process.execPath, [cli, ...args, "--project-ref", ref], {
+    cwd: root, encoding: "utf8", env: childEnv,
   });
-  const out = hide(`${r.stdout}${r.stderr}`).trim().split("\n").slice(-4).join("\n");
-  console.log(`supabase ${args.slice(0, 2).join(" ")} → ${r.status === 0 ? "ok" : `échec (${r.status})`}\n${out}`);
-  if (r.status !== 0) process.exit(1);
+  // On n'affiche que le code de sortie et le message final, débarrassés du ref du projet.
+  const tail = `${r.stdout ?? ""}${r.stderr ?? ""}`.split(ref).join("<ref>").trim().split("\n").slice(-2).join("\n");
+  const label = `supabase ${args.slice(0, 2).join(" ")}`;
+  if (r.status !== 0) throw new Error(`${label} → échec (${r.status})\n${tail}`);
+  console.log(`${label} → ok`);
 }
 
 // Clé publique de l'app (déjà livrée au navigateur) : sert à l'assistant pour agir avec la session de l'utilisateur.
@@ -42,12 +55,22 @@ if (!process.env.GEMINI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
 }
 // Facultatif : horaire de cours uOttawa (flux iCal), importé chaque matin par la fonction plan.
 if (process.env.TIMETABLE_ICAL_URL) secrets.TIMETABLE_ICAL_URL = process.env.TIMETABLE_ICAL_URL;
-const file = join(tmpdir(), `jarvis-secrets-${process.pid}.env`);
-writeFileSync(file, Object.entries(secrets).map(([k, v]) => `${k}=${v}`).join("\n"));
-try { supabase(["secrets", "set", "--env-file", file]); } finally { rmSync(file); }
 
 const all = readdirSync(new URL("supabase/functions/", root), { withFileTypes: true })
   .filter((d) => d.isDirectory() && !d.name.startsWith("_")).map((d) => d.name);
-for (const name of process.argv.slice(2).length ? process.argv.slice(2) : all) {
+const wanted = process.argv.slice(2);
+const unknown = wanted.filter((n) => !all.includes(n));
+if (unknown.length) throw new Error(`Fonction inconnue : ${unknown.join(", ")}`);
+
+const dir = mkdtempSync(join(tmpdir(), "jarvis-"));
+try {
+  const file = join(dir, "secrets.env");
+  writeFileSync(file, Object.entries(secrets).map(([k, v]) => `${k}=${v}`).join("\n"), { mode: 0o600, flag: "wx" });
+  supabase(["secrets", "set", "--env-file", file]);
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}
+
+for (const name of wanted.length ? wanted : all) {
   supabase(["functions", "deploy", name, "--no-verify-jwt", "--use-api"]);
 }

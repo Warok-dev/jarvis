@@ -31,7 +31,8 @@
       }
     },
     "resources": {
-      "resources/wakeword/*.onnx": "wakeword/"
+      "resources/wakeword/*.onnx": "wakeword/",
+      "resources/wakeword/NOTICE.md": "wakeword/NOTICE.md"
     }
   }
 }

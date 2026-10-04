@@ -28,7 +28,7 @@ Pour passer un jour à Claude (payant) : `ANTHROPIC_API_KEY=…` et `LLM_PROVIDE
 
 ## 3. App de bureau (5 min)
 
-1. Lance `apps\desktop\src-tauri\target\release\bundle\nsis\Jarvis_0.1.0_x64-setup.exe`
+1. Lance `apps\desktop\src-tauri\target\release\bundle\nsis\Jarvis_0.2.0_x64-setup.exe`
    (installation pour ton compte seulement, pas besoin d'administrateur).
 2. Jarvis s'ouvre : **connecte-toi** dans la fenêtre. Le PC est alors associé à ton compte
    (l'indicateur « PC » devient vert dans l'app du téléphone).
@@ -41,6 +41,13 @@ Pour passer un jour à Claude (payant) : `ANTHROPIC_API_KEY=…` et `LLM_PROVIDE
      ChatGPT » depuis le téléphone. Les apps ouvrables sont dans
      `%APPDATA%\dev.warok.jarvis\apps.json` (ajoute les tiennes : identifiant, nom, programme).
 4. Fermer la fenêtre libère sa mémoire ; Jarvis reste dans la barre des tâches.
+
+## Sécurité
+
+- Jarvis n’accepte que **ton compte** (inscriptions fermées) et **un seul PC**. Pour changer de PC,
+  retire l’ancien depuis Supabase (table `devices`) avant d’associer le nouveau.
+- Les commandes à distance ne tapent jamais dans un terminal ou un outil système, et n’ouvrent que des
+  URL https simples. La v0.1 de l’app de bureau n’est plus acceptée par le serveur : installe la v0.2.
 
 ## 4. Optionnel
 
