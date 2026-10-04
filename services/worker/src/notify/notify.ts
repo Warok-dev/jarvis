@@ -10,7 +10,7 @@ const QUIET_END = 8;
 const EVENT_WINDOW_MS = 2 * 24 * 3600 * 1000;
 const H = 3600 * 1000;
 
-type Kind = "new_assignment" | "due_changed" | "reminder_24h" | "reminder_3h" | "skipped";
+type Kind = "new_assignment" | "due_changed" | "reminder_24h" | "reminder_3h" | "daily_digest" | "skipped";
 
 interface AssignmentLite {
   id: string;
@@ -48,6 +48,8 @@ export interface NotifyResult {
 }
 
 const hourFmt = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, hour: "numeric", hourCycle: "h23" });
+const dayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" });
+const DIGEST_UNTIL = 10; // récap envoyé au premier passage après 8 h, abandonné après 10 h
 const dueFmt = new Intl.DateTimeFormat("fr-CA", {
   timeZone: TZ, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
 });
@@ -146,6 +148,33 @@ export function planNotifications(
   return rows;
 }
 
+// Récap du matin : ce qui est à rendre aujourd'hui et dans les 7 jours.
+export function planDigest(
+  userId: string,
+  week: AssignmentLite[],
+  existingKeys: Set<string>,
+  now: Date,
+): NotificationRow | null {
+  const hour = Number(hourFmt.format(now));
+  const key = `digest:${dayFmt.format(now)}`;
+  if (hour < QUIET_END || hour >= DIGEST_UNTIL || existingKeys.has(key)) return null;
+  existingKeys.add(key);
+
+  const pending = week
+    .filter((a) => a.due_at && a.status !== "done" && !a.removed_at && Date.parse(a.due_at) > now.getTime())
+    .sort((x, y) => Date.parse(x.due_at!) - Date.parse(y.due_at!));
+  if (!pending.length) {
+    return { user_id: userId, dedup_key: key, kind: "skipped", assignment_id: null, title: null, body: null, url: null };
+  }
+  const today = pending.filter((a) => dayFmt.format(new Date(a.due_at!)) === dayFmt.format(now));
+  const title = today.length
+    ? `Aujourd'hui : ${today.length} à rendre`
+    : `Rien à rendre aujourd'hui · ${pending.length} cette semaine`;
+  const lines = pending.slice(0, 5).map((a) => `${a.course_code ?? "—"} ${a.title} — ${due(a)}`);
+  if (pending.length > 5) lines.push(`et ${pending.length - 5} autre(s) cette semaine`);
+  return { user_id: userId, dedup_key: key, kind: "daily_digest", assignment_id: null, title, body: lines.join("\n"), url: "/" };
+}
+
 // Regroupe les nouveaux devoirs d'un même passage en une seule notification.
 export function toMessages(rows: NotificationRow[]): Array<{ message: PushMessage; ids: string[] }> {
   const sendable = rows.filter((r) => r.kind !== "skipped");
@@ -165,7 +194,8 @@ export function toMessages(rows: NotificationRow[]): Array<{ message: PushMessag
     });
   }
   for (const r of others) {
-    out.push({ message: { title: r.title!, body: r.body!, url: r.url!, tag: `a:${r.assignment_id}` }, ids: [r.dedup_key] });
+    const tag = r.kind === "daily_digest" ? "digest" : `a:${r.assignment_id}`;
+    out.push({ message: { title: r.title!, body: r.body!, url: r.url!, tag }, ids: [r.dedup_key] });
   }
   return out;
 }
@@ -195,7 +225,7 @@ export async function runNotify(db: AdminClient, userId: string, vapid: VapidKey
       .is("removed_at", null)
       .neq("status", "done")
       .gt("due_at", now.toISOString())
-      .lte("due_at", new Date(now.getTime() + 24 * H).toISOString()),
+      .lte("due_at", new Date(now.getTime() + 7 * 24 * H).toISOString()), // 7 j pour le récap, 24 h pour les rappels
   ]);
   if (eventsRes.error) throw new Error(`Lecture du journal : ${eventsRes.error.message}`);
   if (upcomingRes.error) throw new Error(`Lecture des échéances : ${upcomingRes.error.message}`);
@@ -204,6 +234,7 @@ export async function runNotify(db: AdminClient, userId: string, vapid: VapidKey
   const upcoming = upcomingRes.data as AssignmentLite[];
 
   const candidateKeys = [
+    `digest:${dayFmt.format(now)}`,
     ...events.map((e) => `event:${e.id}`),
     ...upcoming.flatMap((a) => [`reminder_24h:${a.id}:${Date.parse(a.due_at!)}`, `reminder_3h:${a.id}:${Date.parse(a.due_at!)}`]),
   ];
@@ -214,7 +245,8 @@ export async function runNotify(db: AdminClient, userId: string, vapid: VapidKey
     for (const r of data) existing.add(r.dedup_key);
   }
 
-  const planned = planNotifications(userId, events, upcoming, existing, now);
+  const digest = planDigest(userId, upcoming, existing, now);
+  const planned = [...(digest ? [digest] : []), ...planNotifications(userId, events, upcoming, existing, now)];
   if (!planned.length) return result;
 
   // ignoreDuplicates : si deux passages tournent en même temps, un seul « gagne » chaque clé.

@@ -48,3 +48,19 @@ const moved = [{ ...upcoming[0], due_at: new Date(now.getTime() + 22 * H).toISOS
 assert.equal(planNotifications("u", [], moved, seen, now).length, 1);
 
 console.log("notify : tous les tests passent");
+
+// 5. Récap du matin
+import { planDigest } from "../src/notify/notify.ts";
+const morning = new Date("2026-10-05T12:20:00Z"); // 8 h 20 à Toronto
+const week = [a("auj", 6), a("demain", 30), a("fini", 10, { status: "done" })].map((x) => ({
+  ...x, due_at: new Date(morning.getTime() + (Date.parse(x.due_at) - now.getTime())).toISOString(),
+}));
+const keys = new Set<string>();
+const d = planDigest("u", week, keys, morning)!;
+assert.equal(d.kind, "daily_digest");
+assert.equal(d.title, "Aujourd'hui : 1 à rendre");
+assert.equal(d.body!.split("\n").length, 2);
+assert.equal(planDigest("u", week, keys, morning), null); // une seule fois par jour
+assert.equal(planDigest("u", week, new Set(), new Date("2026-10-05T15:00:00Z")), null); // 11 h : trop tard
+assert.equal(planDigest("u", [], new Set(), morning)!.kind, "skipped");
+console.log("récap du matin : OK");
