@@ -1,0 +1,13 @@
+{
+  "name": "jarvis",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "check-feed": "npm run check-feed -w @jarvis/worker",
+    "sync-once": "npm run sync-once -w @jarvis/worker"
+  }
+}

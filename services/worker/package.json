@@ -1,0 +1,19 @@
+{
+  "name": "@jarvis/worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check-feed": "tsx --env-file-if-exists=../../.env scripts/check-feed.ts",
+    "typecheck": "tsc --noEmit",
+    "sync-once": "tsx --env-file-if-exists=../../.env scripts/sync-once.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
+    "node-ical": "^0.27.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}
