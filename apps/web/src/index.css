@@ -356,3 +356,18 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   border-radius: 12px;
   padding: 10px 12px;
 }
+
+/* --- Indicateur PC --- */
+
+.topbar-side { display: flex; align-items: center; gap: 14px; }
+.pc-indicator {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+.pc-indicator .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.pc-indicator.on { color: var(--done); border-color: var(--done); }
+.pc-indicator.on .dot { background: var(--done); }

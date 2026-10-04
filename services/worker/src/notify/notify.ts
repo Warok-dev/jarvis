@@ -1,5 +1,6 @@
 import type { AdminClient } from "../db.ts";
 import { sendPush, type VapidKeys } from "../push/webpush.ts";
+import { broadcast, topicFor } from "../devices/device-auth.ts";
 
 // Décide quoi notifier et l'envoie. Appelé toutes les 5 min par pg_cron (fonction notify).
 // Chaque notification a une dedup_key unique : relancer n'envoie jamais deux fois la même chose.
@@ -202,14 +203,33 @@ export function toMessages(rows: NotificationRow[]): Array<{ message: PushMessag
 
 // --- Exécution ---
 
-export async function runNotify(db: AdminClient, userId: string, vapid: VapidKeys, now = new Date()): Promise<NotifyResult> {
+// Accès Realtime pour diffuser vers le PC (notifications Windows natives).
+export interface RealtimeAccess {
+  supabaseUrl: string;
+  secretKey: string;
+}
+
+export async function runNotify(
+  db: AdminClient,
+  userId: string,
+  vapid: VapidKeys,
+  realtime: RealtimeAccess,
+  now = new Date(),
+): Promise<NotifyResult> {
   const result: NotifyResult = { quiet: false, noSubscription: false, created: 0, pushes: 0, delivered: 0, removedSubscriptions: 0 };
   if (isQuietHour(now)) return { ...result, quiet: true };
 
-  // Sans appareil abonné, on ne consomme rien : tout partira au premier abonnement.
-  const { data: subs, error: subErr } = await db.from("push_subscriptions").select("id, endpoint, p256dh, auth, failure_count").eq("user_id", userId);
-  if (subErr) throw new Error(`Lecture des abonnements : ${subErr.message}`);
-  if (!subs.length) return { ...result, noSubscription: true };
+  // Sans appareil joignable, on ne consomme rien : tout partira au premier abonnement.
+  const [subsRes, desktopsRes] = await Promise.all([
+    db.from("push_subscriptions").select("id, endpoint, p256dh, auth, failure_count").eq("user_id", userId),
+    db.from("devices").select("id, secret").eq("user_id", userId).eq("kind", "desktop")
+      .gt("last_seen_at", new Date(now.getTime() - 3 * 60_000).toISOString()),
+  ]);
+  if (subsRes.error) throw new Error(`Lecture des abonnements : ${subsRes.error.message}`);
+  if (desktopsRes.error) throw new Error(`Lecture des appareils : ${desktopsRes.error.message}`);
+  const subs = subsRes.data;
+  const desktopTopics = await Promise.all(desktopsRes.data.map((d) => topicFor(d.secret)));
+  if (!subs.length && !desktopTopics.length) return { ...result, noSubscription: true };
 
   const cols = "id, title, course_code, due_at, status, removed_at";
   const [eventsRes, upcomingRes] = await Promise.all([
@@ -275,6 +295,10 @@ export async function runNotify(db: AdminClient, userId: string, vapid: VapidKey
         console.error("push refusé", r.status, r.body);
         await db.from("push_subscriptions").update({ failure_count: s.failure_count + 1 }).eq("id", s.id);
       }
+    }
+    // PC allumé : notification Windows native via son canal temps réel.
+    for (const topic of desktopTopics) {
+      if (await broadcast(realtime.supabaseUrl, realtime.secretKey, topic, "notification", { ...message })) delivered = true;
     }
     if (delivered) {
       result.delivered++;

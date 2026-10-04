@@ -3,6 +3,7 @@ import { supabase } from "../lib/supabase";
 import { PushSettings } from "./PushSettings";
 import { Assistant } from "./Assistant";
 import { currentDevice } from "../lib/device";
+import { PcIndicator } from "./PcIndicator";
 import {
   fetchAssignments, formatDue, groupOf, GROUP_LABELS, setStatus, subscribeAssignments,
   type Assignment, type GroupKey, type Status,
@@ -80,7 +81,10 @@ export function AssignmentList({ userId }: { userId: string }) {
           <h1>Devoirs</h1>
           {items && <p className="subtitle">{pending === 0 ? "Rien à faire. Profite." : `${pending} à faire`}</p>}
         </div>
-        <button className="ghost" onClick={() => supabase.auth.signOut()}>Déconnexion</button>
+        <div className="topbar-side">
+          <PcIndicator />
+          <button className="ghost" onClick={() => supabase.auth.signOut()}>Déconnexion</button>
+        </div>
       </header>
 
       {/* Sur PC, les alertes passeront par des notifications Windows natives. */}

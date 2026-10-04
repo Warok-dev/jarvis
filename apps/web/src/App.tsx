@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
+import { registerDesktop } from "./lib/desktop";
 import { Login } from "./components/Login";
 import { AssignmentList } from "./components/AssignmentList";
 
@@ -12,6 +13,10 @@ export default function App() {
     const { data } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
     return () => data.subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (session) void registerDesktop(session);
+  }, [session]);
 
   if (session === undefined) return <div className="splash" aria-busy="true" />;
   if (!session) return <Login />;

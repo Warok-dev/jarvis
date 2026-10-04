@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
       publicKey: env("VAPID_PUBLIC_KEY"),
       privateKey: env("VAPID_PRIVATE_KEY"),
       subject: env("VAPID_SUBJECT"),
-    });
+    }, { supabaseUrl: env("SUPABASE_URL"), secretKey: env("JARVIS_SECRET_KEY") });
     if (result.created || result.pushes) console.log("notify", result);
     return Response.json(result);
   } catch (err) {

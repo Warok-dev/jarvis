@@ -2,6 +2,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { chat, type ChatTurn } from "../../../services/worker/src/assistant/assistant.ts";
+import { createAdminClient } from "../../../services/worker/src/db.ts";
 
 // tauri.localhost : app de bureau Windows.
 const ALLOWED_ORIGINS = ["https://jarvis-4s2.pages.dev", "http://tauri.localhost", "http://localhost:5180"];
@@ -46,7 +47,10 @@ Deno.serve(async (req) => {
 
   const device = body.device === "mobile" || body.device === "desktop" ? body.device : "web";
   try {
-    const result = await chat(new Anthropic({ apiKey }), db, history, device);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const secretKey = Deno.env.get("JARVIS_SECRET_KEY")!;
+    const pc = { admin: createAdminClient(supabaseUrl, secretKey), userId: user.id, supabaseUrl, secretKey };
+    const result = await chat(new Anthropic({ apiKey }), db, history, device, pc);
     return json(result);
   } catch (err) {
     if (err instanceof Anthropic.RateLimitError) return json({ reply: "Je suis un peu débordé, réessaie dans une minute." }, 429);
