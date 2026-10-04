@@ -33,11 +33,15 @@ const secrets: Record<string, string> = {
   VAPID_SUBJECT: requireEnv("VAPID_SUBJECT"),
   JARVIS_PUBLISHABLE_KEY: publishable,
 };
-// Facultative tant que l'assistant n'est pas branché.
-if (process.env.ANTHROPIC_API_KEY) secrets.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+// Cerveau de l'assistant : Gemini (gratuit) et/ou Claude ; sans clé, seul l'interpréteur local répond.
+for (const k of ["GEMINI_API_KEY", "GEMINI_MODEL", "ANTHROPIC_API_KEY", "LLM_PROVIDER"]) {
+  if (process.env[k]) secrets[k] = process.env[k]!;
+}
+if (!process.env.GEMINI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
+  console.log("Aucune clé de modèle dans .env : seul l'interpréteur local répondra.");
+}
 // Facultatif : horaire de cours uOttawa (flux iCal), importé chaque matin par la fonction plan.
 if (process.env.TIMETABLE_ICAL_URL) secrets.TIMETABLE_ICAL_URL = process.env.TIMETABLE_ICAL_URL;
-else console.log("ANTHROPIC_API_KEY absente de .env : l'assistant répondra qu'il n'est pas encore branché.");
 const file = join(tmpdir(), `jarvis-secrets-${process.pid}.env`);
 writeFileSync(file, Object.entries(secrets).map(([k, v]) => `${k}=${v}`).join("\n"));
 try { supabase(["secrets", "set", "--env-file", file]); } finally { rmSync(file); }

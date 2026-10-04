@@ -61,7 +61,7 @@ export const pcTools: Anthropic.Beta.BetaTool[] = [
   },
 ];
 
-async function onlineDesktop(pc: PcAccess) {
+export async function onlineDesktop(pc: PcAccess) {
   const { data, error } = await pc.admin
     .from("devices")
     .select("id, label, secret, apps, remote_enabled, last_seen_at")

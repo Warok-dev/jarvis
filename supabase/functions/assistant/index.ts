@@ -1,7 +1,9 @@
 // Conversation avec Jarvis (texte ou voix transcrite) depuis l'app web/mobile et, plus tard, le PC.
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
-import { chat, type ChatTurn } from "../../../services/worker/src/assistant/assistant.ts";
+import type { ChatTurn } from "../../../services/worker/src/assistant/assistant.ts";
+import { respond, type Providers } from "../../../services/worker/src/assistant/brain.ts";
+import { GeminiError } from "../../../services/worker/src/assistant/gemini.ts";
 import { createAdminClient } from "../../../services/worker/src/db.ts";
 
 // tauri.localhost : app de bureau Windows.
@@ -20,8 +22,14 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: cors });
   const json = (body: unknown, status = 200) => Response.json(body, { status, headers: cors });
 
-  const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-  if (!apiKey) return json({ reply: "Mon cerveau n'est pas encore branché : il manque la clé API Anthropic côté serveur." }, 503);
+  // Fournisseur : Gemini (offre gratuite) par défaut ; Claude si LLM_PROVIDER=claude et clé fournie.
+  // Sans aucune clé, l'interpréteur local répond aux demandes courantes.
+  const providers: Providers = {};
+  const geminiKey = Deno.env.get("GEMINI_API_KEY");
+  const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
+  const preferClaude = Deno.env.get("LLM_PROVIDER") === "claude" && anthropicKey;
+  if (geminiKey && !preferClaude) providers.gemini = { apiKey: geminiKey, model: Deno.env.get("GEMINI_MODEL") ?? "gemini-flash-latest" };
+  else if (anthropicKey) providers.claude = new Anthropic({ apiKey: anthropicKey });
 
   // Client à la session de l'utilisateur : RLS s'applique à chaque outil.
   const authorization = req.headers.get("authorization") ?? "";
@@ -50,9 +58,15 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const secretKey = Deno.env.get("JARVIS_SECRET_KEY")!;
     const pc = { admin: createAdminClient(supabaseUrl, secretKey), userId: user.id, supabaseUrl, secretKey };
-    const result = await chat(new Anthropic({ apiKey }), db, history, device, pc);
+    const result = await respond(db, history, device, providers, pc);
+    console.log("assistant", result.via);
     return json(result);
   } catch (err) {
+    if (err instanceof GeminiError) {
+      console.error("assistant gemini", err.status, err.message.slice(0, 200));
+      if (err.status === 429) return json({ reply: "J'ai atteint mon quota gratuit pour le moment. Réessaie dans une minute." }, 429);
+      return json({ reply: "Mon cerveau en ligne ne répond pas. Réessaie dans un instant." }, 502);
+    }
     if (err instanceof Anthropic.RateLimitError) return json({ reply: "Je suis un peu débordé, réessaie dans une minute." }, 429);
     if (err instanceof Anthropic.AuthenticationError) return json({ reply: "La clé API Anthropic est refusée." }, 502);
     console.error("assistant", err instanceof Anthropic.APIError ? `${err.status} ${err.message}` : (err as Error).message);

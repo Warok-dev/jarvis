@@ -14,8 +14,8 @@ const TZ = "America/Toronto";
 
 export type ChatTurn = { role: "user" | "assistant"; content: string };
 
-const SYSTEM = `Tu es Jarvis, l'assistant personnel d'un étudiant en 3e année de génie informatique à l'Université d'Ottawa.
-Tu réponds en français, à l'oral : phrases courtes et naturelles, sans markdown, sans listes à puces, sans emojis, sans liens.
+export const SYSTEM = `Tu es Jarvis, l'assistant personnel d'un étudiant en 3e année de génie informatique à l'Université d'Ottawa.
+Tu tutoies l'étudiant. Tu réponds en français, à l'oral : phrases courtes et naturelles, sans markdown, sans listes à puces, sans emojis, sans liens.
 Va droit au but. Une réponse fait en général une à trois phrases ; un récapitulatif peut en faire davantage.
 Pour toute question sur les devoirs, échéances ou cours, appelle list_assignments plutôt que de deviner.
 Quand l'étudiant dit avoir fini, commencé ou abandonné un devoir, retrouve-le avec list_assignments puis appelle update_assignment_status. S'il y a plusieurs devoirs possibles, demande lequel au lieu de choisir.
@@ -29,7 +29,7 @@ Quand l'étudiant décrit un cours ou un engagement fixe (« j'ai cours le lundi
 Pour « qu'est-ce que je travaille ce soir / cette semaine », appelle get_study_plan. Si l'étudiant dit qu'un devoir lui prendra plus ou moins de temps, appelle set_estimate puis replan.
 Tu ne peux pas encore lire les mails : si on te le demande, dis-le simplement. Les cours ne sont pris en compte dans le planning que si l'horaire a été importé.`
 
-const tools: Anthropic.Beta.BetaTool[] = [
+export const tools: Anthropic.Beta.BetaTool[] = [
   {
     name: "list_assignments",
     description:
@@ -241,17 +241,32 @@ export async function runTool(db: SupabaseClient, name: string, input: Record<st
   throw new Error(`Outil inconnu : ${name}`);
 }
 
-export async function chat(
+// Outils disponibles (les outils PC seulement si l'accès serveur est fourni).
+export function availableTools(pc?: PcAccess): Anthropic.Beta.BetaTool[] {
+  return pc ? [...tools, ...pcTools] : tools;
+}
+
+// Exécute un outil, quel que soit le modèle qui l'a demandé.
+export async function executeTool(
+  db: SupabaseClient, name: string, input: Record<string, unknown>, device: string, pc?: PcAccess,
+): Promise<string> {
+  return name.startsWith("pc_") && pc ? runPcTool(pc, name, input) : runTool(db, name, input, device, pc);
+}
+
+export function contextLine(device: string): string {
+  return `Nous sommes le ${fmt.format(new Date())} (heure de Toronto). Appareil : ${device}.`;
+}
+
+export async function chatClaude(
   anthropic: Anthropic,
   db: SupabaseClient,
   history: ChatTurn[],
   device: "mobile" | "desktop" | "web",
   pc?: PcAccess,
 ): Promise<{ reply: string; changed: boolean }> {
-  const now = fmt.format(new Date());
   const messages: Anthropic.Beta.BetaMessageParam[] = history.map((t) => ({ role: t.role, content: t.content }));
   // Contexte volatil en fin de conversation, pour garder le préfixe (system + outils) stable.
-  messages.push({ role: "system", content: `Nous sommes le ${now} (heure de Toronto). Appareil : ${device}.` });
+  messages.push({ role: "system", content: contextLine(device) });
   let changed = false;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -262,7 +277,7 @@ export async function chat(
       fallbacks: "default",
       output_config: { effort: "low" }, // conversation vocale : latence avant tout
       system: SYSTEM,
-      tools: pc ? [...tools, ...pcTools] : tools,
+      tools: availableTools(pc),
       messages,
     });
 
@@ -282,9 +297,7 @@ export async function chat(
       toolUses.map(async (t) => {
         try {
           const input = t.input as Record<string, unknown>;
-          const content = t.name.startsWith("pc_") && pc
-            ? await runPcTool(pc, t.name, input)
-            : await runTool(db, t.name, input, device, pc);
+          const content = await executeTool(db, t.name, input, device, pc);
           if (t.name === "update_assignment_status") changed = true;
           return { type: "tool_result" as const, tool_use_id: t.id, content };
         } catch (e) {

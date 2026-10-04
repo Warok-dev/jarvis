@@ -11,18 +11,20 @@ Ce qui demande ton intervention, dans l'ordre. Tout le reste tourne déjà dans 
 4. Touche **Activer** (notifications), puis **Tester** : une notification doit arriver.
 5. Ouvre **Planning → Disponibilités** : ajuste tes plages et ajoute tes cours fixes.
 
-## 2. Brancher l'assistant (5 min)
+## 2. L'assistant (gratuit)
 
-1. Crée une clé sur https://console.anthropic.com (Settings → API Keys).
-2. Ajoute-la à la fin de `.env` : `ANTHROPIC_API_KEY=sk-ant-…`
-3. Déploie :
+Les demandes courantes sont comprises **localement**, sans IA ni coût : « Qu'est-ce que j'ai à rendre
+demain ? », « Mon planning », « J'ai fini le lab 1 d'ELG », « Je commence le devoir d'économie 2 »,
+« Ouvre VS Code ». Les autres questions partent vers **Gemini Flash** (offre gratuite de Google,
+clé `GEMINI_API_KEY` dans `.env`), avec repli automatique sur Flash-Lite en cas de forte demande.
+
+Après toute modification de `.env` :
 
 ```bash
-cd C:\Users\GB\Desktop\Projet_perso\jarvis\services\worker && npx tsx --env-file=../../.env scripts/deploy-functions.ts assistant
+cd C:UsersGBDesktopProjet_persojarvisservicesworker && npx tsx --env-file=../../.env scripts/deploy-functions.ts assistant
 ```
 
-Essaie ensuite : « Qu'est-ce que j'ai à rendre cette semaine ? », « J'ai fini le lab 1 d'ELG »,
-« Le devoir 2 de CEG3555 va me prendre 6 h », « J'ai cours le lundi de 8 h 30 à 10 h ».
+Pour passer un jour à Claude (payant) : `ANTHROPIC_API_KEY=…` et `LLM_PROVIDER=claude` dans `.env`.
 
 ## 3. App de bureau (5 min)
 

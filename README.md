@@ -74,7 +74,7 @@ cd apps/desktop && npx tauri build         # installateur Windows (NSIS)
 - [x] Synchronisation Brightspace (iCal) dans le cloud
 - [x] App web/mobile : devoirs, statuts, temps réel
 - [x] Notifications push + récap du matin
-- [x] Assistant (texte/voix) — nécessite `ANTHROPIC_API_KEY`
+- [x] Assistant (texte/voix) : interpréteur local gratuit + Gemini Flash (offre gratuite), Claude en option
 - [x] App de bureau : barre des tâches, démarrage auto
 - [x] PC relié au cloud : présence, notifications Windows natives, commandes signées
 - [x] Contrôle du PC, niveau 1 : actions en liste blanche via l'assistant (« ouvre VS Code »)
