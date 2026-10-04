@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { PushSettings } from "./PushSettings";
 import {
   fetchAssignments, formatDue, groupOf, GROUP_LABELS, setStatus, subscribeAssignments,
   type Assignment, type GroupKey, type Status,
@@ -12,6 +13,8 @@ export function AssignmentList({ userId }: { userId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [showDone, setShowDone] = useState(false);
   const [now, setNow] = useState(() => new Date());
+  // Devoir ouvert depuis une notification (?a=<id>) : on le met en évidence.
+  const [focusId, setFocusId] = useState(() => new URLSearchParams(location.search).get("a"));
 
   const load = useCallback(() => {
     fetchAssignments().then(setItems, (e: Error) => setError(e.message));
@@ -37,6 +40,16 @@ export function AssignmentList({ userId }: { userId: string }) {
       clearInterval(tick);
     };
   }, [userId, load]);
+
+  useEffect(() => {
+    if (!focusId || !items) return;
+    const target = items.find((a) => a.id === focusId);
+    if (target?.status === "done") setShowDone(true);
+    history.replaceState(null, "", location.pathname);
+    requestAnimationFrame(() => document.getElementById(`a-${focusId}`)?.scrollIntoView({ block: "center", behavior: "smooth" }));
+    const t = setTimeout(() => setFocusId(null), 2500);
+    return () => clearTimeout(t);
+  }, [focusId, items]);
 
   const groups = useMemo(() => {
     const g = new Map<GroupKey, Assignment[]>(ORDER.map((k) => [k, []]));
@@ -68,6 +81,8 @@ export function AssignmentList({ userId }: { userId: string }) {
         <button className="ghost" onClick={() => supabase.auth.signOut()}>Déconnexion</button>
       </header>
 
+      <PushSettings />
+
       {error && <p className="error banner" role="alert" onClick={() => setError(null)}>{error}</p>}
       {!items && !error && <p className="muted center">Chargement…</p>}
 
@@ -88,7 +103,7 @@ export function AssignmentList({ userId }: { userId: string }) {
             </h2>
             {!collapsed && (
               <ul>
-                {list.map((a) => <Row key={a.id} a={a} now={now} onChange={change} />)}
+                {list.map((a) => <Row key={a.id} a={a} now={now} focused={a.id === focusId} onChange={change} />)}
               </ul>
             )}
           </section>
@@ -98,11 +113,13 @@ export function AssignmentList({ userId }: { userId: string }) {
   );
 }
 
-function Row({ a, now, onChange }: { a: Assignment; now: Date; onChange: (a: Assignment, s: Status) => void }) {
+function Row({ a, now, focused, onChange }: {
+  a: Assignment; now: Date; focused: boolean; onChange: (a: Assignment, s: Status) => void;
+}) {
   const { date, relative } = formatDue(a.due_at, now);
   const done = a.status === "done";
   return (
-    <li className={`row status-${a.status}`}>
+    <li id={`a-${a.id}`} className={`row status-${a.status}${focused ? " focused" : ""}`}>
       <button
         className="check"
         role="checkbox"

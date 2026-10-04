@@ -228,3 +228,37 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   min-height: 32px;
 }
 .chip.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+/* --- Notifications --- */
+
+.push-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 24px;
+}
+.push-card p { margin: 0; font-size: 14px; }
+.push-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.push-actions { display: flex; align-items: center; gap: 12px; flex: none; }
+.push-info { margin-top: 8px !important; color: var(--muted); }
+
+.primary {
+  flex: none;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  min-height: 40px;
+}
+@media (prefers-color-scheme: dark) { .primary { color: #04121b; } }
+.primary[disabled], .chip[disabled], .ghost[disabled] { opacity: 0.5; }
+
+.row.focused { animation: focus-flash 2.4s ease-out; }
+@keyframes focus-flash {
+  0%, 40% { background: var(--accent-soft); }
+  100% { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .row.focused { animation: none; background: var(--accent-soft); } }
