@@ -40,7 +40,7 @@ la connexion dans la fenêtre. Ensuite :
 - canal temps réel privé (dérivé du secret) → notifications Windows natives, commandes ;
 - commandes signées par le serveur, expirées après 2 min, exécutées une seule fois ;
 - **commandes à distance désactivées par défaut** (menu de la barre des tâches) ;
-- liste blanche : ouvrir une app de `%APPDATA%\dev.warok.jarvispps.json`, ouvrir une URL https,
+- liste blanche : ouvrir une app de `%APPDATA%\dev.warok.jarvis\apps.json`, ouvrir une URL https,
   taper du texte (seulement après avoir ouvert une app), Entrée/Tab/Échap, attendre ;
 - journal : `%APPDATA%\dev.warok.jarvis\jarvis.log`.
 
