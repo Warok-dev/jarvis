@@ -24,7 +24,10 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  // Seules les pages de Jarvis peuvent être ouvertes depuis une notification.
+  let target = new URL(event.notification.data?.url || "/", self.location.origin);
+  if (target.origin !== self.location.origin) target = new URL("/", self.location.origin);
+  const url = target.href;
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
